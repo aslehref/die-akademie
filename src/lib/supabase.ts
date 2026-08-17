@@ -2,8 +2,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Der Schrägstrich am Ende muss weg. Supabase hängt intern "/rest/v1/…" an,
+// aus "https://x.supabase.co/" würde sonst "https://x.supabase.co//rest/v1/…"
+// mit doppeltem Schrägstrich – das lehnt das Gateway mit
+// "Invalid path specified in request URL" ab.
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
