@@ -22,6 +22,15 @@
 			: monat + (12 - SCHULJAHR_START) + 1;
 	}
 
+	// Diese Seiten gibt es schon. Alle anderen Orte der Karte sind zwar in
+	// der Datenbank angelegt, aber noch nicht gebaut – sie als Link
+	// anzubieten würde nur in eine Fehlerseite führen.
+	const GEBAUTE_SEITEN = ['/dashboard', '/dashboard/markt', '/dashboard/finale'];
+
+	function istGebaut(route: string | null) {
+		return GEBAUTE_SEITEN.includes(route ?? '');
+	}
+
 	function istOffen(ort: { freigeschaltet?: boolean; freischaltung_monat: number }) {
 		if (ort.freigeschaltet) return true;
 		return (
@@ -176,29 +185,33 @@
 			{:else}
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
 					{#each karteOrte as ort}
-						{#if istOffen(ort)}
-							<a
-								href="{base}{ort.route || '/dashboard'}"
-								class="p-3 rounded bg-academy-bg/50 border text-center transition-colors border-academy-blue/20 hover:border-academy-gold/50"
+						{#if !istOffen(ort)}
+							<div
+								class="p-3 rounded bg-academy-bg/50 border text-center border-academy-blue/10 opacity-40"
 							>
 								<div class="text-2xl mb-1">{ort.icon}</div>
-								<div class="text-xs font-bold text-academy-parchment">
-									{ort.name}
-								</div>
-							</a>
-						{:else}
-							<a
-								href="{base}{ort.route || '/dashboard'}"
-								class="p-3 rounded bg-academy-bg/50 border text-center transition-colors border-academy-blue/10 opacity-40 cursor-not-allowed"
-							>
-								<div class="text-2xl mb-1">{ort.icon}</div>
-								<div class="text-xs font-bold text-academy-steel">
-									{ort.name}
-								</div>
+								<div class="text-xs font-bold text-academy-steel">{ort.name}</div>
 								<div class="text-xs text-academy-steel mt-1">
 									🔒 Monat {ort.freischaltung_monat}
 								</div>
+							</div>
+						{:else if istGebaut(ort.route)}
+							<a
+								href="{base}{ort.route}"
+								class="p-3 rounded bg-academy-bg/50 border text-center transition-colors border-academy-blue/20 hover:border-academy-gold/50"
+							>
+								<div class="text-2xl mb-1">{ort.icon}</div>
+								<div class="text-xs font-bold text-academy-parchment">{ort.name}</div>
 							</a>
+						{:else}
+							<div
+								class="p-3 rounded bg-academy-bg/50 border text-center border-academy-blue/10 opacity-60"
+								title="Diese Seite ist noch nicht gebaut."
+							>
+								<div class="text-2xl mb-1">{ort.icon}</div>
+								<div class="text-xs font-bold text-academy-steel">{ort.name}</div>
+								<div class="text-xs text-academy-steel mt-1">in Arbeit</div>
+							</div>
 						{/if}
 					{/each}
 				</div>

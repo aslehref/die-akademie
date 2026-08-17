@@ -59,22 +59,16 @@
 					🏠 Dashboard
 				</a>
 				<a
-					href="{base}/dashboard/allgemein"
+					href="{base}/dashboard/markt"
 					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
 				>
-					🌐 Allgemein
+					🛒 Punkteladen
 				</a>
 				<a
-					href="{base}/dashboard/faecher"
+					href="{base}/dashboard/finale"
 					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
 				>
-					📚 Fächer
-				</a>
-				<a
-					href="{base}/dashboard/klassenstufen"
-					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
-				>
-					🎓 Klassenstufen
+					👑 Jahresfinale
 				</a>
 
 				<div class="border-t border-academy-blue/30 my-4 pt-4">

@@ -210,14 +210,6 @@
 				<h3 class="font-heading text-academy-gold">Administration</h3>
 				<p class="text-academy-steel text-sm">Bereiche verwalten</p>
 			</a>
-			<a
-				href="{base}/quests"
-				class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors block text-center"
-			>
-				<div class="text-4xl mb-2">⚔️</div>
-				<h3 class="font-heading text-academy-gold">Quests</h3>
-				<p class="text-academy-steel text-sm">Übersicht aller Quests</p>
-			</a>
 		</section>
 	{/if}
 </div>
