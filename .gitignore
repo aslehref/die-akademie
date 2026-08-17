@@ -1,0 +1,11 @@
+node_modules/
+build/
+.svelte-kit/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vscode/settings.json
+src/lib/paraglide/
+project.inlang/
