@@ -137,6 +137,7 @@ export async function updateHaus(
 		farbe_sekundär: string;
 		motto: string;
 		beschreibung: string;
+		logo_pfad: string | null;
 	}>
 ) {
 	return await supabase.from('haeuser').update(data).eq('id', id).select().single();
@@ -144,6 +145,68 @@ export async function updateHaus(
 
 export async function deleteHaus(id: string) {
 	return await supabase.from('haeuser').delete().eq('id', id);
+}
+
+/**
+ * Zählt, was beim Löschen eines Hauses mitgeht. Wird vor der Rückfrage
+ * abgerufen, damit dort keine vage Warnung steht, sondern konkrete Zahlen.
+ */
+export async function hausLoeschUmfang(hausId: string) {
+	const [schueler, heldentaten, buchungen] = await Promise.all([
+		supabase.from('schueler').select('id', { count: 'exact', head: true }).eq('haus_id', hausId),
+		supabase.from('heldentaten').select('id', { count: 'exact', head: true }).eq('haus_id', hausId),
+		supabase
+			.from('punkte_transaktionen')
+			.select('id', { count: 'exact', head: true })
+			.eq('haus_id', hausId)
+	]);
+	return {
+		schueler: schueler.count ?? 0,
+		heldentaten: heldentaten.count ?? 0,
+		buchungen: buchungen.count ?? 0
+	};
+}
+
+// === Heldentaten ===\
+// Festgehaltene Momente, in denen ein Haus oder ein Kind etwas gut
+// gemacht hat. Bewusst getrennt von den Punktebuchungen: nicht jede
+// Heldentat muss Punkte geben, und nicht jede Buchung ist erzählenswert.
+export async function getHeldentaten(hausId: string) {
+	return await supabase
+		.from('heldentaten')
+		.select('*, schueler:schueler_id(akademiename)')
+		.eq('haus_id', hausId)
+		.order('geschehen_am', { ascending: false })
+		.order('created_at', { ascending: false });
+}
+
+export async function createHeldentat(data: {
+	haus_id: string;
+	schueler_id?: string | null;
+	titel: string;
+	beschreibung?: string | null;
+	geschehen_am?: string;
+	bilder?: string[];
+	erstellt_von?: string | null;
+}) {
+	return await supabase.from('heldentaten').insert(data).select().single();
+}
+
+export async function updateHeldentat(
+	id: string,
+	data: Partial<{
+		titel: string;
+		beschreibung: string | null;
+		geschehen_am: string;
+		schueler_id: string | null;
+		bilder: string[];
+	}>
+) {
+	return await supabase.from('heldentaten').update(data).eq('id', id).select().single();
+}
+
+export async function deleteHeldentat(id: string) {
+	return await supabase.from('heldentaten').delete().eq('id', id);
 }
 
 // === Schüler CRUD ===\

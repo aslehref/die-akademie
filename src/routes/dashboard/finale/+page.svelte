@@ -152,12 +152,12 @@
 </script>
 
 <svelte:head>
-	<title>Jahresfinale · Die Akademie</title>
+	<title>Das Finale · Die Akademie</title>
 </svelte:head>
 
 <div class="max-w-4xl mx-auto p-6">
 	<div class="flex justify-between items-center mb-6">
-		<h1 class="text-3xl font-heading text-academy-gold">👑 Jahresfinale</h1>
+		<h1 class="text-3xl font-heading text-academy-gold">👑 Das Finale</h1>
 		{#if loading}
 			<span class="text-academy-steel animate-pulse">Lade Finale…</span>
 		{/if}

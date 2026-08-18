@@ -56,19 +56,19 @@
 					href="{base}/dashboard"
 					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
 				>
-					🏠 Dashboard
+					🏰 Große Halle
 				</a>
 				<a
 					href="{base}/dashboard/markt"
 					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
 				>
-					🛒 Punkteladen
+					🛒 Der Markt
 				</a>
 				<a
 					href="{base}/dashboard/finale"
 					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
 				>
-					👑 Jahresfinale
+					👑 Das Finale
 				</a>
 
 				<div class="border-t border-academy-blue/30 my-4 pt-4">
@@ -77,7 +77,7 @@
 							href="{base}/admin"
 							class="block px-3 py-2 rounded hover:bg-academy-magenta/30 text-academy-gold transition-colors"
 						>
-							⚙️ Administration
+							⚙️ Lehrerzimmer
 						</a>
 					{/if}
 				</div>

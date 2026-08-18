@@ -19,33 +19,34 @@
 	});
 
 	const tabs = [
-		{ label: 'Übersicht', href: base + '/admin', icon: '🏠' },
-		{ label: 'Bereiche', href: base + '/admin/bereiche', icon: '📚' },
+		{ label: 'Überblick', href: base + '/admin', icon: '🏠' },
+		{ label: 'Fakultäten', href: base + '/admin/bereiche', icon: '📚' },
 		{ label: 'Quests', href: base + '/admin/quests', icon: '⚔️' },
-		{ label: 'Belohnungen', href: base + '/admin/belohnungen', icon: '🪙' },
-		{ label: 'Abzeichen', href: base + '/admin/abzeichen', icon: '🏅' }
+		{ label: 'Privilegien', href: base + '/admin/belohnungen', icon: '🪙' },
+		{ label: 'Orden', href: base + '/admin/abzeichen', icon: '🏅' }
 	];
 </script>
 
 <svelte:head>
-	<title>Administration · Die Akademie</title>
+	<title>Lehrerzimmer · Die Akademie</title>
 </svelte:head>
 
 <div class="max-w-6xl mx-auto">
-	<h1 class="text-3xl font-heading text-academy-gold mb-6">⚙️ Administration</h1>
+	<h1 class="text-3xl font-heading text-academy-gold mb-6">⚙️ Lehrerzimmer</h1>
 
 	{#if !geprueft}
 		<p class="text-academy-steel">Zugriff wird geprüft…</p>
 	{:else if rolle !== 'admin'}
 		<div class="bg-academy-surface border border-academy-blue/30 rounded-lg p-6">
 			<p class="text-academy-parchment mb-2">
-				Dieser Bereich ist der Rolle <span class="text-academy-cyan">admin</span> vorbehalten.
+				Das Lehrerzimmer ist der Rolle <span class="text-academy-cyan">admin</span> vorbehalten.
 			</p>
 			<p class="text-sm text-academy-steel">
 				Deine Rolle: <span class="text-academy-parchment">{rolle ?? 'keine'}</span>. Rollen werden
 				in der Tabelle <code>user_roles</code> vergeben.
 			</p>
-			<a href="{base}/dashboard" class="inline-block mt-4 text-sm underline">Zurück zum Dashboard</a
+			<a href="{base}/dashboard" class="inline-block mt-4 text-sm underline"
+				>Zurück zur Großen Halle</a
 			>
 		</div>
 	{:else}

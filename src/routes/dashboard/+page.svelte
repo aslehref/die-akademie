@@ -42,12 +42,12 @@
 </script>
 
 <svelte:head>
-	<title>Dashboard · Die Akademie</title>
+	<title>Große Halle · Die Akademie</title>
 </svelte:head>
 
 <div class="max-w-4xl mx-auto">
 	<div class="flex items-start justify-between mb-8">
-		<h1 class="text-3xl font-heading text-academy-gold">🏠 Dashboard</h1>
+		<h1 class="text-3xl font-heading text-academy-gold">🏰 Große Halle</h1>
 		{#if schuelerInfo}
 			<div class="flex items-center gap-3 text-right">
 				<div>
@@ -71,7 +71,7 @@
 	</div>
 
 	{#if loading}
-		<div class="text-academy-steel text-center py-12">Lade Dashboard…</div>
+		<div class="text-academy-steel text-center py-12">Lade die Große Halle…</div>
 	{:else}
 		<!-- Aktuelles Kapitel -->
 		<section class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30 mb-6">
@@ -95,9 +95,9 @@
 		<!-- Meine Fächer / Klassenstufen -->
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
 			<section class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30">
-				<h2 class="text-xl font-heading text-academy-gold mb-4">📚 Bereiche</h2>
+				<h2 class="text-xl font-heading text-academy-gold mb-4">📚 Fakultäten</h2>
 				{#if bereiche.length === 0}
-					<p class="text-academy-steel text-sm">Noch keine Bereiche vorhanden.</p>
+					<p class="text-academy-steel text-sm">Noch keine Fakultäten vorhanden.</p>
 				{:else}
 					<div class="space-y-2">
 						{#each bereiche as b}
@@ -207,8 +207,8 @@
 				class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors block text-center"
 			>
 				<div class="text-4xl mb-2">⚙️</div>
-				<h3 class="font-heading text-academy-gold">Administration</h3>
-				<p class="text-academy-steel text-sm">Bereiche verwalten</p>
+				<h3 class="font-heading text-academy-gold">Lehrerzimmer</h3>
+				<p class="text-academy-steel text-sm">Fakultäten verwalten</p>
 			</a>
 		</section>
 	{/if}

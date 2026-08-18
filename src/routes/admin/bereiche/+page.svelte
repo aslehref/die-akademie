@@ -48,7 +48,7 @@
 </script>
 
 <div class="flex justify-between items-center mb-6">
-	<h2 class="text-2xl font-heading text-academy-gold">Bereiche</h2>
+	<h2 class="text-2xl font-heading text-academy-gold">Fakultäten</h2>
 	<button
 		onclick={() => (showCreateForm = !showCreateForm)}
 		class="px-4 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90 transition-colors"
@@ -114,11 +114,11 @@
 {/if}
 
 {#if loading}
-	<div class="text-academy-steel">Lade Bereiche…</div>
+	<div class="text-academy-steel">Lade Fakultäten…</div>
 {:else if bereiche.length === 0}
 	<div class="text-center py-12 text-academy-steel">
 		<div class="text-4xl mb-4">📚</div>
-		<p>Noch keine Bereiche angelegt.</p>
+		<p>Noch keine Fakultäten angelegt.</p>
 		<p class="text-sm mt-2">
 			Erstelle ein Fach (z.B. Religion) oder eine Klassenstufe (z.B. Klasse 7).
 		</p>

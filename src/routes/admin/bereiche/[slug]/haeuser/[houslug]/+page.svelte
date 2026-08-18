@@ -2,28 +2,71 @@
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
-	import { supabase, getSchueler, createSchueler, awardPoints, getChronik } from '$lib/supabase.js';
+	import { goto } from '$app/navigation';
+	import {
+		supabase,
+		createSchueler,
+		deleteSchueler,
+		awardPoints,
+		getChronik,
+		getHeldentaten,
+		createHeldentat,
+		deleteHeldentat,
+		updateHaus,
+		deleteHaus,
+		hausLoeschUmfang
+	} from '$lib/supabase.js';
+	import { ladeBildHoch, bildLinks, loescheBilder, pruefeBild } from '$lib/bilder.js';
 
 	let haus = $state<any>(null);
 	let schueler = $state<any[]>([]);
-	let transaktionen = $state<any[]>([]);
+	let buchungen = $state<any[]>([]);
 	let chronik = $state<any[]>([]);
-	let loading = $state(true);
+	let heldentaten = $state<any[]>([]);
+	let links = $state<Record<string, string>>({});
+	let laedt = $state(true);
+	let ladeFehler = $state('');
+	let meldung = $state('');
+	let fehler = $state('');
+	let arbeitet = $state(false);
 
-	// Schüler anlegen
-	let showAddStudent = $state(false);
-	let newAkademiename = $state('');
-	let addStudentError = $state('');
+	let offen = $state<'' | 'aufnehmen' | 'punkte' | 'heldentat' | 'bearbeiten' | 'loeschen'>('');
 
-	// Punkte vergeben
-	let showAwardPoints = $state(false);
-	let selectedSchueler = $state('');
-	let pointBetrag = $state(10);
-	let pointKategorie = $state('lernen');
-	let pointGrund = $state('');
-	let lehrerId = $state('');
+	// Aufnahme
+	let neuerName = $state('');
+	let aufnahmeFehler = $state('');
 
-	const categories = [
+	// Punkte
+	let punkteSchueler = $state('');
+	let punkteBetrag = $state(10);
+	let punkteKategorie = $state('lernen');
+	let punkteGrund = $state('');
+	let lehrerId = $state<string | null>(null);
+
+	// Heldentat
+	let htTitel = $state('');
+	let htText = $state('');
+	let htDatum = $state('');
+	let htSchueler = $state('');
+	let htDateien = $state<File[]>([]);
+	let htVorschau = $state<string[]>([]);
+	let htFehler = $state('');
+
+	// Bearbeiten
+	let bName = $state('');
+	let bHausname = $state('');
+	let bMotto = $state('');
+	let bBeschreibung = $state('');
+	let bFarbe1 = $state('#1e3a5f');
+	let bFarbe2 = $state('#d4a74a');
+	let bWappen = $state<File | null>(null);
+	let bWappenVorschau = $state('');
+
+	// Löschen
+	let umfang = $state<{ schueler: number; heldentaten: number; buchungen: number } | null>(null);
+	let loeschBestaetigung = $state('');
+
+	const kategorien = [
 		{ value: 'lernen', label: '📚 Lernen & Leistung' },
 		{ value: 'sozialverhalten', label: '🤝 Sozialverhalten' },
 		{ value: 'selbstständigkeit', label: '🧠 Selbstständigkeit' },
@@ -35,95 +78,312 @@
 	];
 
 	onMount(async () => {
-		await load();
+		htDatum = new Date().toISOString().slice(0, 10);
+		await laden();
 	});
 
-	async function load() {
-		loading = true;
-		const houslug = $page.params.houslug;
-		const { data: h } = await supabase.from('haeuser').select('*').eq('slug', houslug).single();
-		haus = h;
-		if (h) {
-			const [s, t, c] = await Promise.all([
-				getSchueler(h.id),
-				getHausTransaktionen(h.id),
-				getChronik(h.id)
+	async function laden() {
+		laedt = true;
+		ladeFehler = '';
+		try {
+			const { data: h, error } = await supabase
+				.from('haeuser')
+				.select('*')
+				.eq('slug', $page.params.houslug)
+				.single();
+			if (error) throw error;
+			haus = h;
+
+			const [s, t, c, ht] = await Promise.all([
+				supabase.from('schueler').select('*').eq('haus_id', h.id).order('akademiename'),
+				supabase
+					.from('punkte_transaktionen')
+					.select('*, schueler:schueler_id(akademiename)')
+					.eq('haus_id', h.id)
+					.order('created_at', { ascending: false })
+					.limit(30),
+				getChronik(h.id),
+				getHeldentaten(h.id)
 			]);
 			schueler = s.data ?? [];
-			transaktionen = t.data ?? [];
+			buchungen = t.data ?? [];
 			chronik = c.data ?? [];
+			heldentaten = ht.data ?? [];
+
+			await linksHolen();
+			setzeBearbeitenFelder();
+
+			const { data } = await supabase.auth.getUser();
+			lehrerId = data.user?.id ?? null;
+		} catch (e: any) {
+			ladeFehler = e?.message ?? 'Das Haus konnte nicht geladen werden.';
+		} finally {
+			laedt = false;
 		}
-		// Get current user as fallback lehrer
-		const {
-			data: { user }
-		} = await supabase.auth.getUser();
-		if (user) lehrerId = user.id;
-		loading = false;
 	}
 
-	async function getHausTransaktionen(hausId: string) {
-		return await supabase
-			.from('punkte_transaktionen')
-			.select('*, schueler:schueler_id(akademiename)')
-			.eq('haus_id', hausId)
-			.order('created_at', { ascending: false })
-			.limit(50);
+	/**
+	 * Bilder liegen in einem privaten Speicher. Für die Anzeige braucht es
+	 * jedes Mal frisch unterschriebene Links – deshalb alle Pfade der Seite
+	 * in einem Rutsch auflösen statt einzeln je Bild.
+	 */
+	async function linksHolen() {
+		const pfade = [
+			...(haus?.logo_pfad ? [haus.logo_pfad] : []),
+			...heldentaten.flatMap((h) => h.bilder ?? [])
+		];
+		links = await bildLinks(pfade);
 	}
 
-	async function handleAddStudent(e: Event) {
+	function setzeBearbeitenFelder() {
+		if (!haus) return;
+		bName = haus.name ?? '';
+		bHausname = haus.hausname ?? '';
+		bMotto = haus.motto ?? '';
+		bBeschreibung = haus.beschreibung ?? '';
+		bFarbe1 = haus.farbe_primär ?? '#1e3a5f';
+		bFarbe2 = haus.farbe_sekundär ?? '#d4a74a';
+		bWappen = null;
+		bWappenVorschau = '';
+	}
+
+	function oeffne(was: typeof offen) {
+		offen = offen === was ? '' : was;
+		meldung = '';
+		fehler = '';
+		aufnahmeFehler = '';
+		htFehler = '';
+		if (was === 'bearbeiten') setzeBearbeitenFelder();
+		if (was === 'loeschen') ladeUmfang();
+	}
+
+	// ---------------------------------------------------------------- Aufnahme
+	async function aufnehmen(e: Event) {
 		e.preventDefault();
 		if (!haus) return;
-		addStudentError = '';
-
-		// Kinder bekommen bewusst keinen eigenen Zugang: kein Login, kein
-		// Passwort, keine E-Mail-Adresse. Der Datensatz gehoert der Lehrkraft.
+		aufnahmeFehler = '';
 		const { error } = await createSchueler({
 			haus_id: haus.id,
-			akademiename: newAkademiename.trim()
+			akademiename: neuerName.trim()
 		});
-
 		if (error) {
-			addStudentError =
+			aufnahmeFehler =
 				error.code === '23505'
-					? `„${newAkademiename.trim()}“ gibt es in diesem Haus schon.`
+					? `„${neuerName.trim()}“ gibt es in diesem Haus schon.`
 					: error.message;
 			return;
 		}
-
-		showAddStudent = false;
-		newAkademiename = '';
-		await load();
+		neuerName = '';
+		offen = '';
+		meldung = 'Aufgenommen.';
+		await laden();
 	}
-	async function handleAwardPoints(e: Event) {
+
+	async function entlassen(s: any) {
+		if (!confirmErsatz(`${s.akademiename} wirklich aus dem Haus entfernen?`)) return;
+		const { error } = await deleteSchueler(s.id);
+		if (error) fehler = error.message;
+		else await laden();
+	}
+
+	// Kleine Hilfe, damit die Rückfrage an einer Stelle sitzt.
+	function confirmErsatz(text: string) {
+		return window.confirm(text);
+	}
+
+	// ---------------------------------------------------------------- Punkte
+	async function punkteVerleihen(e: Event) {
 		e.preventDefault();
-		if (!haus || !selectedSchueler) return;
-		const schuelerId = selectedSchueler;
+		if (!haus || !punkteSchueler) return;
+		arbeitet = true;
+		fehler = '';
 		const { error } = await awardPoints({
-			schueler_id: schuelerId,
+			schueler_id: punkteSchueler,
 			haus_id: haus.id,
-			betrag: pointBetrag,
-			kategorie: pointKategorie,
-			grund: pointGrund,
+			bereich_id: haus.bereich_id,
+			betrag: punkteBetrag,
+			kategorie: punkteKategorie,
+			grund: punkteGrund,
 			lehrer_id: lehrerId
 		});
+		arbeitet = false;
 		if (error) {
-			alert(error.message);
+			fehler = error.message;
 			return;
 		}
-		showAwardPoints = false;
-		pointGrund = '';
-		await load();
+		punkteGrund = '';
+		offen = '';
+		meldung = 'Punkte verliehen.';
+		await laden();
 	}
 
-	async function handleEnergyChange(delta: number) {
+	// ---------------------------------------------------------------- Heldentat
+	function dateienGewaehlt(e: Event) {
+		htFehler = '';
+		const liste = Array.from((e.target as HTMLInputElement).files ?? []);
+		for (const d of liste) {
+			const f = pruefeBild(d);
+			if (f) {
+				htFehler = f;
+				return;
+			}
+		}
+		htDateien = liste;
+		htVorschau = liste.map((d) => URL.createObjectURL(d));
+	}
+
+	async function heldentatEintragen(e: Event) {
+		e.preventDefault();
 		if (!haus) return;
-		const newEnergie = Math.max(0, Math.min(haus.energie_max, haus.energie + delta));
-		await supabase.from('haeuser').update({ energie: newEnergie }).eq('id', haus.id);
-		haus.energie = newEnergie;
+		arbeitet = true;
+		htFehler = '';
+		try {
+			const pfade: string[] = [];
+			for (const datei of htDateien) {
+				pfade.push(await ladeBildHoch(datei, `haeuser/${haus.id}/heldentaten`));
+			}
+
+			const { error } = await createHeldentat({
+				haus_id: haus.id,
+				schueler_id: htSchueler || null,
+				titel: htTitel.trim(),
+				beschreibung: htText.trim() || null,
+				geschehen_am: htDatum,
+				bilder: pfade,
+				erstellt_von: lehrerId
+			});
+			if (error) throw error;
+
+			htTitel = '';
+			htText = '';
+			htSchueler = '';
+			htDateien = [];
+			htVorschau = [];
+			htDatum = new Date().toISOString().slice(0, 10);
+			offen = '';
+			meldung = 'Heldentat festgehalten.';
+			await laden();
+		} catch (err: any) {
+			htFehler = err?.message ?? 'Die Heldentat konnte nicht gespeichert werden.';
+		} finally {
+			arbeitet = false;
+		}
 	}
 
-	function formatDate(dateStr: string) {
-		return new Date(dateStr).toLocaleDateString('de-DE', {
+	async function heldentatLoeschen(h: any) {
+		if (!confirmErsatz(`„${h.titel}“ wirklich löschen? Die Bilder gehen mit.`)) return;
+		arbeitet = true;
+		try {
+			const { error } = await deleteHeldentat(h.id);
+			if (error) throw error;
+			await loescheBilder(h.bilder ?? []);
+			await laden();
+		} catch (err: any) {
+			fehler = err?.message ?? 'Löschen fehlgeschlagen.';
+		} finally {
+			arbeitet = false;
+		}
+	}
+
+	// ---------------------------------------------------------------- Bearbeiten
+	function wappenGewaehlt(e: Event) {
+		fehler = '';
+		const datei = (e.target as HTMLInputElement).files?.[0] ?? null;
+		if (!datei) return;
+		const f = pruefeBild(datei);
+		if (f) {
+			fehler = f;
+			return;
+		}
+		bWappen = datei;
+		bWappenVorschau = URL.createObjectURL(datei);
+	}
+
+	async function hausSpeichern(e: Event) {
+		e.preventDefault();
+		if (!haus) return;
+		arbeitet = true;
+		fehler = '';
+		try {
+			let logoPfad = haus.logo_pfad ?? null;
+			if (bWappen) {
+				const neu = await ladeBildHoch(bWappen, `haeuser/${haus.id}`);
+				// Erst nach erfolgreichem Hochladen das alte Wappen entfernen,
+				// sonst steht das Haus bei einem Fehler ganz ohne da.
+				if (logoPfad) await loescheBilder([logoPfad]);
+				logoPfad = neu;
+			}
+
+			const { error } = await updateHaus(haus.id, {
+				name: bName.trim(),
+				hausname: bHausname.trim(),
+				motto: bMotto.trim(),
+				beschreibung: bBeschreibung.trim(),
+				farbe_primär: bFarbe1,
+				farbe_sekundär: bFarbe2,
+				logo_pfad: logoPfad
+			});
+			if (error) throw error;
+
+			offen = '';
+			meldung = 'Gespeichert.';
+			await laden();
+		} catch (err: any) {
+			fehler = err?.message ?? 'Speichern fehlgeschlagen.';
+		} finally {
+			arbeitet = false;
+		}
+	}
+
+	async function wappenEntfernen() {
+		if (!haus?.logo_pfad) return;
+		arbeitet = true;
+		const alt = haus.logo_pfad;
+		const { error } = await updateHaus(haus.id, { logo_pfad: null });
+		if (!error) await loescheBilder([alt]);
+		arbeitet = false;
+		await laden();
+	}
+
+	// ---------------------------------------------------------------- Löschen
+	async function ladeUmfang() {
+		umfang = null;
+		loeschBestaetigung = '';
+		if (!haus) return;
+		umfang = await hausLoeschUmfang(haus.id);
+	}
+
+	async function hausLoeschen() {
+		if (!haus) return;
+		arbeitet = true;
+		fehler = '';
+		try {
+			// Bilder zuerst, solange die Pfade noch bekannt sind.
+			const pfade = [
+				...(haus.logo_pfad ? [haus.logo_pfad] : []),
+				...heldentaten.flatMap((h) => h.bilder ?? [])
+			];
+			await loescheBilder(pfade);
+
+			const { error } = await deleteHaus(haus.id);
+			if (error) throw error;
+			await goto(`${base}/admin/bereiche/${$page.params.slug}`);
+		} catch (err: any) {
+			fehler = err?.message ?? 'Löschen fehlgeschlagen.';
+			arbeitet = false;
+		}
+	}
+
+	// ---------------------------------------------------------------- Anzeige
+	function datum(s: string) {
+		return new Date(s).toLocaleDateString('de-DE', {
+			day: '2-digit',
+			month: '2-digit',
+			year: 'numeric'
+		});
+	}
+	function datumZeit(s: string) {
+		return new Date(s).toLocaleDateString('de-DE', {
 			day: '2-digit',
 			month: '2-digit',
 			year: 'numeric',
@@ -131,274 +391,575 @@
 			minute: '2-digit'
 		});
 	}
-
-	function catLabel(value: string) {
-		return categories.find((c) => c.value === value)?.label ?? value;
+	function katLabel(v: string) {
+		return kategorien.find((k) => k.value === v)?.label ?? v;
 	}
+
+	const eingabeKlasse =
+		'w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none';
 </script>
 
-{#if loading}
+<svelte:head>
+	<title>{haus?.hausname ?? 'Haus'} · Die Akademie</title>
+</svelte:head>
+
+{#if laedt}
 	<div class="text-academy-steel">Lade…</div>
+{:else if ladeFehler}
+	<div class="bg-red-900/30 border border-red-700/50 text-red-200 p-4 rounded">{ladeFehler}</div>
 {:else if !haus}
-	<div class="text-academy-steel">Haus nicht gefunden.</div>
+	<div class="text-academy-steel">Dieses Haus gibt es nicht.</div>
 {:else}
-	<!-- Haus-Header -->
-	<div class="flex items-center gap-4 mb-6">
-		<a href="{base}/admin/bereiche" class="text-academy-steel text-sm hover:text-academy-parchment"
-			>← Bereiche</a
+	<div class="mb-4">
+		<a
+			href="{base}/admin/bereiche/{$page.params.slug}"
+			class="text-academy-steel text-sm hover:text-academy-parchment">← Zurück zur Fakultät</a
 		>
 	</div>
 
+	<!-- Kopf des Hauses -->
 	<div
 		class="bg-academy-surface rounded-lg p-6 border mb-6"
 		style="border-color: {haus.farbe_primär}44;"
 	>
-		<div class="flex items-start justify-between">
+		<div class="flex items-start justify-between gap-4 flex-wrap">
 			<div class="flex items-center gap-4">
-				<div
-					class="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
-					style="background: {haus.farbe_primär}; color: {haus.farbe_sekundär}"
-				>
-					{haus.hausname[0]}
-				</div>
+				{#if haus.logo_pfad && links[haus.logo_pfad]}
+					<img
+						src={links[haus.logo_pfad]}
+						alt="Wappen von {haus.hausname}"
+						class="w-20 h-20 rounded-lg object-cover border-2"
+						style="border-color: {haus.farbe_sekundär}"
+					/>
+				{:else}
+					<div
+						class="w-20 h-20 rounded-lg flex items-center justify-center text-3xl font-bold font-heading"
+						style="background: {haus.farbe_primär}; color: {haus.farbe_sekundär}"
+					>
+						{haus.hausname[0]}
+					</div>
+				{/if}
 				<div>
 					<h2 class="text-2xl font-heading text-academy-gold">{haus.hausname}</h2>
 					<p class="text-academy-steel">
-						{haus.name}
-						{#if haus.motto}
+						{haus.name}{#if haus.motto}
 							· „{haus.motto}“{/if}
 					</p>
+					{#if haus.beschreibung}
+						<p class="text-sm text-academy-steel mt-1 max-w-xl">{haus.beschreibung}</p>
+					{/if}
 				</div>
 			</div>
 			<div class="text-right">
 				<div class="text-3xl font-bold text-academy-gold">{haus.hauspunkte}</div>
 				<div class="text-sm text-academy-steel">Hauspunkte</div>
-				<div class="flex items-center gap-2 mt-2 justify-end">
-					<span class="text-xs text-academy-steel"
-						>⚡ Energie: {haus.energie}/{haus.energie_max}</span
-					>
-					<button
-						onclick={() => handleEnergyChange(-5)}
-						class="text-xs px-2 py-1 bg-red-900/30 text-red-400 rounded hover:bg-red-900/50"
-						>−5</button
-					>
-					<button
-						onclick={() => handleEnergyChange(5)}
-						class="text-xs px-2 py-1 bg-green-900/30 text-green-400 rounded hover:bg-green-900/50"
-						>+5</button
-					>
+				<div class="text-xs text-academy-steel mt-2">
+					🔥 Hausfeuer {haus.energie}/{haus.energie_max}
 				</div>
 			</div>
 		</div>
 	</div>
 
-	<!-- Aktionen -->
-	<div class="flex gap-3 mb-6">
-		<button
-			onclick={() => {
-				showAddStudent = !showAddStudent;
-				showAwardPoints = false;
-			}}
-			class="px-4 py-2 bg-academy-cyan text-white rounded font-bold text-sm hover:bg-academy-cyan/80 transition-colors"
+	{#if meldung}
+		<div
+			class="bg-academy-green/30 border border-academy-green text-academy-parchment p-3 rounded mb-4"
 		>
-			+ Schüler hinzufügen
+			{meldung}
+		</div>
+	{/if}
+	{#if fehler}
+		<div class="bg-red-900/30 border border-red-700/50 text-red-200 p-3 rounded mb-4">{fehler}</div>
+	{/if}
+
+	<!-- Handlungen -->
+	<div class="flex gap-2 mb-6 flex-wrap">
+		<button
+			onclick={() => oeffne('heldentat')}
+			class="px-4 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90"
+		>
+			⚔️ Heldentat eintragen
 		</button>
 		<button
-			onclick={() => {
-				showAwardPoints = !showAwardPoints;
-				showAddStudent = false;
-			}}
-			class="px-4 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90 transition-colors"
+			onclick={() => oeffne('punkte')}
+			class="px-4 py-2 bg-academy-cyan text-white rounded font-bold text-sm hover:bg-academy-cyan/80"
 		>
-			+ Punkte vergeben
+			✨ Punkte verleihen
+		</button>
+		<button
+			onclick={() => oeffne('aufnehmen')}
+			class="px-4 py-2 rounded border border-academy-blue/50 text-academy-parchment text-sm hover:bg-academy-blue/30"
+		>
+			＋ In die Akademie aufnehmen
+		</button>
+		<button
+			onclick={() => oeffne('bearbeiten')}
+			class="px-4 py-2 rounded border border-academy-blue/50 text-academy-parchment text-sm hover:bg-academy-blue/30"
+		>
+			✎ Haus bearbeiten
+		</button>
+		<button
+			onclick={() => oeffne('loeschen')}
+			class="px-4 py-2 rounded border border-red-800/60 text-red-300 text-sm hover:bg-red-900/30"
+		>
+			Haus auflösen
 		</button>
 	</div>
 
-	<!-- Schüler hinzufügen Form -->
-	{#if showAddStudent}
+	<!-- Heldentat eintragen -->
+	{#if offen === 'heldentat'}
 		<form
-			onsubmit={handleAddStudent}
-			class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30 mb-6 space-y-3"
+			onsubmit={heldentatEintragen}
+			class="bg-academy-surface rounded-lg p-5 border border-academy-gold/40 mb-6 space-y-4"
 		>
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-				<div>
-					<label for="akademiename" class="block text-sm text-academy-parchment mb-1"
-						>Akademiename</label
+			<h3 class="font-heading text-academy-gold text-lg">Eine Heldentat festhalten</h3>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+				<div class="md:col-span-2">
+					<label for="ht-titel" class="block text-sm text-academy-parchment mb-1"
+						>Was ist geschehen?</label
 					>
 					<input
-						id="akademiename"
+						id="ht-titel"
 						type="text"
-						bind:value={newAkademiename}
+						bind:value={htTitel}
 						required
-						class="w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none"
-						placeholder="z.B. Raven"
+						class={eingabeKlasse}
+						placeholder="z.B. Das Haus hat die Bibliothek hergerichtet"
 					/>
 				</div>
+				<div>
+					<label for="ht-datum" class="block text-sm text-academy-parchment mb-1">Wann?</label>
+					<input id="ht-datum" type="date" bind:value={htDatum} required class={eingabeKlasse} />
+				</div>
 			</div>
-			{#if addStudentError}
-				<p class="text-sm text-red-300">{addStudentError}</p>
+
+			<div>
+				<label for="ht-wer" class="block text-sm text-academy-parchment mb-1">Wer?</label>
+				<select id="ht-wer" bind:value={htSchueler} class={eingabeKlasse}>
+					<option value="">Das ganze Haus</option>
+					{#each schueler as s}
+						<option value={s.id}>{s.akademiename}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div>
+				<label for="ht-text" class="block text-sm text-academy-parchment mb-1"
+					>Erzähl es (kann leer bleiben)</label
+				>
+				<textarea id="ht-text" bind:value={htText} rows="3" class={eingabeKlasse}></textarea>
+			</div>
+
+			<div>
+				<label for="ht-bilder" class="block text-sm text-academy-parchment mb-1">Bilder</label>
+				<input
+					id="ht-bilder"
+					type="file"
+					accept="image/*"
+					multiple
+					onchange={dateienGewaehlt}
+					class="block w-full text-sm text-academy-steel file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-academy-blue/40 file:text-academy-parchment hover:file:bg-academy-blue/60"
+				/>
+				<p class="text-xs text-academy-steel mt-1">
+					Höchstens 10 MB je Bild. Die Bilder sind nur für angemeldete Personen sichtbar.
+				</p>
+				{#if htVorschau.length > 0}
+					<div class="flex gap-2 mt-3 flex-wrap">
+						{#each htVorschau as v}
+							<img
+								src={v}
+								alt="Vorschau"
+								class="w-24 h-24 object-cover rounded border border-academy-blue/40"
+							/>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			{#if htFehler}
+				<p class="text-sm text-red-300">{htFehler}</p>
+			{/if}
+
+			<button
+				type="submit"
+				disabled={arbeitet}
+				class="px-4 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90 disabled:opacity-50"
+			>
+				{arbeitet ? 'Einen Moment…' : 'Heldentat festhalten'}
+			</button>
+		</form>
+	{/if}
+
+	<!-- Punkte verleihen -->
+	{#if offen === 'punkte'}
+		<form
+			onsubmit={punkteVerleihen}
+			class="bg-academy-surface rounded-lg p-5 border border-academy-blue/30 mb-6 space-y-3"
+		>
+			<h3 class="font-heading text-academy-gold text-lg">Punkte verleihen</h3>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+				<div>
+					<label for="p-wer" class="block text-sm text-academy-parchment mb-1">An wen?</label>
+					<select id="p-wer" bind:value={punkteSchueler} required class={eingabeKlasse}>
+						<option value="">— wählen —</option>
+						{#each schueler as s}
+							<option value={s.id}>{s.akademiename}</option>
+						{/each}
+					</select>
+				</div>
+				<div>
+					<label for="p-betrag" class="block text-sm text-academy-parchment mb-1">Wie viel?</label>
+					<input
+						id="p-betrag"
+						type="number"
+						bind:value={punkteBetrag}
+						required
+						class={eingabeKlasse}
+					/>
+				</div>
+				<div>
+					<label for="p-kat" class="block text-sm text-academy-parchment mb-1">Wofür?</label>
+					<select id="p-kat" bind:value={punkteKategorie} class={eingabeKlasse}>
+						{#each kategorien as k}
+							<option value={k.value}>{k.label}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+			<div>
+				<label for="p-grund" class="block text-sm text-academy-parchment mb-1">Begründung</label>
+				<input
+					id="p-grund"
+					type="text"
+					bind:value={punkteGrund}
+					required
+					class={eingabeKlasse}
+					placeholder="Was genau war es?"
+				/>
+			</div>
+			<p class="text-xs text-academy-steel">
+				Ein negativer Betrag zieht Guthaben ab, lässt die Erfahrung aber unberührt.
+			</p>
+			<button
+				type="submit"
+				disabled={arbeitet}
+				class="px-4 py-2 bg-academy-cyan text-white rounded font-bold text-sm hover:bg-academy-cyan/80 disabled:opacity-50"
+			>
+				Punkte verleihen
+			</button>
+		</form>
+	{/if}
+
+	<!-- Aufnehmen -->
+	{#if offen === 'aufnehmen'}
+		<form
+			onsubmit={aufnehmen}
+			class="bg-academy-surface rounded-lg p-5 border border-academy-blue/30 mb-6 space-y-3"
+		>
+			<h3 class="font-heading text-academy-gold text-lg">In die Akademie aufnehmen</h3>
+			<div>
+				<label for="akademiename" class="block text-sm text-academy-parchment mb-1"
+					>Akademiename</label
+				>
+				<input
+					id="akademiename"
+					type="text"
+					bind:value={neuerName}
+					required
+					class={eingabeKlasse}
+					placeholder="z.B. Raven"
+				/>
+			</div>
+			{#if aufnahmeFehler}
+				<p class="text-sm text-red-300">{aufnahmeFehler}</p>
 			{/if}
 			<p class="text-xs text-academy-steel">
 				Kinder melden sich nicht selbst an. Der Akademiename genügt.
 			</p>
 			<button
 				type="submit"
-				class="px-4 py-2 bg-academy-cyan text-white rounded font-bold text-sm hover:bg-academy-cyan/80 transition-colors"
+				class="px-4 py-2 rounded border border-academy-blue/50 text-academy-parchment text-sm hover:bg-academy-blue/30"
 			>
-				Schüler hinzufügen
+				Aufnehmen
 			</button>
 		</form>
 	{/if}
 
-	<!-- Punkte vergeben Form -->
-	{#if showAwardPoints}
+	<!-- Bearbeiten -->
+	{#if offen === 'bearbeiten'}
 		<form
-			onsubmit={handleAwardPoints}
-			class="bg-academy-surface rounded-lg p-4 border border-academy-gold/30 mb-6 space-y-3"
+			onsubmit={hausSpeichern}
+			class="bg-academy-surface rounded-lg p-5 border border-academy-blue/30 mb-6 space-y-3"
 		>
-			<h3 class="font-heading text-academy-gold font-bold">Punkte vergeben</h3>
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+			<h3 class="font-heading text-academy-gold text-lg">Haus bearbeiten</h3>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 				<div>
-					<label for="selected-schueler" class="block text-sm text-academy-parchment mb-1"
-						>Schüler</label
-					>
-					<select
-						id="selected-schueler"
-						bind:value={selectedSchueler}
-						required
-						class="w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none"
-					>
-						<option value="">Auswählen…</option>
-						{#each schueler as s}
-							<option value={s.id}>{s.akademiename} (Level {s.level}, {s.punkte} Punkte)</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label for="point-betrag" class="block text-sm text-academy-parchment mb-1">Betrag</label>
+					<label for="b-hausname" class="block text-sm text-academy-parchment mb-1">Hausname</label>
 					<input
-						id="point-betrag"
-						type="number"
-						bind:value={pointBetrag}
+						id="b-hausname"
+						type="text"
+						bind:value={bHausname}
 						required
-						min="-50"
-						max="100"
-						class="w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none"
+						class={eingabeKlasse}
 					/>
 				</div>
 				<div>
-					<label for="point-kategorie" class="block text-sm text-academy-parchment mb-1"
-						>Kategorie</label
+					<label for="b-name" class="block text-sm text-academy-parchment mb-1"
+						>Klasse oder Kurs</label
 					>
-					<select
-						id="point-kategorie"
-						bind:value={pointKategorie}
-						class="w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none"
-					>
-						{#each categories as cat}
-							<option value={cat.value}>{cat.label}</option>
-						{/each}
-					</select>
+					<input id="b-name" type="text" bind:value={bName} required class={eingabeKlasse} />
 				</div>
-				<div class="md:col-span-3">
-					<label for="point-grund" class="block text-sm text-academy-parchment mb-1">Grund</label>
+			</div>
+			<div>
+				<label for="b-motto" class="block text-sm text-academy-parchment mb-1">Motto</label>
+				<input id="b-motto" type="text" bind:value={bMotto} class={eingabeKlasse} />
+			</div>
+			<div>
+				<label for="b-text" class="block text-sm text-academy-parchment mb-1">Beschreibung</label>
+				<textarea id="b-text" bind:value={bBeschreibung} rows="2" class={eingabeKlasse}></textarea>
+			</div>
+			<div class="grid grid-cols-2 gap-3 max-w-xs">
+				<div>
+					<label for="b-f1" class="block text-sm text-academy-parchment mb-1">Hauptfarbe</label>
 					<input
-						id="point-grund"
-						type="text"
-						bind:value={pointGrund}
-						required
-						class="w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none"
-						placeholder="z.B. Hervorragende Diskussionsbeteiligung"
+						id="b-f1"
+						type="color"
+						bind:value={bFarbe1}
+						class="w-full h-10 rounded bg-academy-bg"
+					/>
+				</div>
+				<div>
+					<label for="b-f2" class="block text-sm text-academy-parchment mb-1">Zweitfarbe</label>
+					<input
+						id="b-f2"
+						type="color"
+						bind:value={bFarbe2}
+						class="w-full h-10 rounded bg-academy-bg"
 					/>
 				</div>
 			</div>
+
+			<div>
+				<label for="b-wappen" class="block text-sm text-academy-parchment mb-1">Wappen</label>
+				<div class="flex items-center gap-4 flex-wrap">
+					{#if bWappenVorschau}
+						<img src={bWappenVorschau} alt="Neues Wappen" class="w-20 h-20 object-cover rounded" />
+					{:else if haus.logo_pfad && links[haus.logo_pfad]}
+						<img
+							src={links[haus.logo_pfad]}
+							alt="Aktuelles Wappen"
+							class="w-20 h-20 object-cover rounded"
+						/>
+					{/if}
+					<input
+						id="b-wappen"
+						type="file"
+						accept="image/*"
+						onchange={wappenGewaehlt}
+						class="block text-sm text-academy-steel file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-academy-blue/40 file:text-academy-parchment hover:file:bg-academy-blue/60"
+					/>
+					{#if haus.logo_pfad}
+						<button
+							type="button"
+							onclick={wappenEntfernen}
+							class="text-xs px-2 py-1 rounded border border-academy-steel/50 text-academy-steel hover:bg-academy-steel/20"
+						>
+							Wappen entfernen
+						</button>
+					{/if}
+				</div>
+			</div>
+
 			<button
 				type="submit"
-				class="px-6 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90 transition-colors"
+				disabled={arbeitet}
+				class="px-4 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90 disabled:opacity-50"
 			>
-				Punkte verbuchen
+				{arbeitet ? 'Speichere…' : 'Speichern'}
 			</button>
 		</form>
 	{/if}
 
-	<!-- Zweispaltig: Schüler + Transaktionen -->
-	<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-		<!-- Schülerliste -->
-		<section class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30">
-			<h3 class="font-heading text-academy-gold font-bold mb-3">👤 Schüler ({schueler.length})</h3>
-			{#if schueler.length === 0}
-				<p class="text-academy-steel text-sm">Noch keine Schüler in diesem Haus.</p>
+	<!-- Auflösen -->
+	{#if offen === 'loeschen'}
+		<div class="bg-red-950/30 rounded-lg p-5 border border-red-800/60 mb-6 space-y-3">
+			<h3 class="font-heading text-red-300 text-lg">Haus auflösen</h3>
+			{#if umfang === null}
+				<p class="text-academy-steel text-sm">Prüfe, was daran hängt…</p>
 			{:else}
-				<div class="space-y-2">
-					{#each schueler as s}
-						<div
-							class="flex items-center justify-between p-2 rounded bg-academy-bg/50 border border-academy-blue/10"
-						>
-							<div>
-								<span class="font-bold text-academy-parchment">{s.akademiename}</span>
-								<span class="text-xs text-academy-steel ml-2">⭐ Level {s.level}</span>
-							</div>
-							<div class="text-right text-sm">
-								<span class="text-academy-cyan">{s.xp} XP</span>
-								<span class="text-academy-gold ml-2">{s.punkte} 🪙</span>
-							</div>
-						</div>
-					{/each}
+				<p class="text-academy-parchment text-sm">Mit dem Haus verschwindet unwiderruflich:</p>
+				<ul class="text-sm text-academy-steel list-disc list-inside">
+					<li>{umfang.schueler} aufgenommene Schüler*innen samt Punkteständen</li>
+					<li>{umfang.heldentaten} Heldentaten samt aller Bilder</li>
+					<li>{umfang.buchungen} Punktebuchungen</li>
+					<li>die Chronik dieses Hauses</li>
+				</ul>
+				<p class="text-sm text-academy-parchment">
+					Tippe zum Bestätigen den Hausnamen: <span class="font-bold">{haus.hausname}</span>
+				</p>
+				<input
+					type="text"
+					bind:value={loeschBestaetigung}
+					class="{eingabeKlasse} max-w-sm"
+					placeholder={haus.hausname}
+				/>
+				<div class="flex gap-3">
+					<button
+						type="button"
+						onclick={hausLoeschen}
+						disabled={arbeitet || loeschBestaetigung.trim() !== haus.hausname}
+						class="px-4 py-2 rounded bg-red-800 text-white font-bold text-sm hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+					>
+						{arbeitet ? 'Löse auf…' : 'Endgültig auflösen'}
+					</button>
+					<button
+						type="button"
+						onclick={() => (offen = '')}
+						class="px-4 py-2 rounded border border-academy-steel/50 text-academy-steel text-sm hover:bg-academy-steel/20"
+					>
+						Abbrechen
+					</button>
 				</div>
 			{/if}
-		</section>
+		</div>
+	{/if}
 
-		<!-- Letzte Transaktionen -->
-		<section class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30">
-			<h3 class="font-heading text-academy-gold font-bold mb-3">📜 Letzte Transaktionen</h3>
-			{#if transaktionen.length === 0}
-				<p class="text-academy-steel text-sm">Noch keine Transaktionen.</p>
-			{:else}
-				<div class="space-y-2 max-h-96 overflow-y-auto">
-					{#each transaktionen as t}
-						<div
-							class="flex items-start justify-between p-2 rounded bg-academy-bg/50 border border-academy-blue/10 text-sm"
-						>
-							<div class="flex-1">
-								<div class="text-academy-parchment">
-									{t.schueler?.akademiename ?? '—'}
-								</div>
-								<div class="text-xs text-academy-steel">{catLabel(t.kategorie)} · {t.grund}</div>
-								<div class="text-xs text-academy-steel">{formatDate(t.created_at)}</div>
-							</div>
-							<div
-								class="font-bold whitespace-nowrap {t.betrag >= 0
-									? 'text-academy-cyan'
-									: 'text-red-400'}"
-							>
-								{t.betrag >= 0 ? '+' : ''}{t.betrag}
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</section>
-	</div>
-
-	<!-- Chronik -->
-	<section class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30 mt-6">
-		<h3 class="font-heading text-academy-gold font-bold mb-3">📜 Chronik</h3>
-		{#if chronik.length === 0}
-			<p class="text-academy-steel text-sm">Noch keine Chronik-Einträge.</p>
+	<!-- Heldentaten -->
+	<section class="mb-8">
+		<h3 class="text-xl font-heading text-academy-gold mb-3">⚔️ Heldentaten</h3>
+		{#if heldentaten.length === 0}
+			<p
+				class="text-academy-steel text-sm bg-academy-surface rounded-lg p-5 border border-academy-blue/20"
+			>
+				Noch nichts festgehalten. Der erste Eintrag lohnt sich – Kinder lesen so etwas erstaunlich
+				oft nach.
+			</p>
 		{:else}
-			<div class="space-y-2 max-h-48 overflow-y-auto">
-				{#each chronik as e}
-					<div class="flex items-start gap-2 p-2 rounded bg-academy-bg/50 text-sm">
-						<div class="text-xs text-academy-steel mt-0.5">{formatDate(e.created_at)}</div>
+			<div class="space-y-4">
+				{#each heldentaten as h}
+					<article class="bg-academy-surface rounded-lg p-5 border border-academy-blue/30">
+						<div class="flex items-start justify-between gap-4">
+							<div>
+								<h4 class="font-heading text-academy-parchment font-bold">{h.titel}</h4>
+								<p class="text-xs text-academy-steel">
+									{datum(h.geschehen_am)}
+									· {h.schueler?.akademiename ?? 'das ganze Haus'}
+								</p>
+							</div>
+							<button
+								type="button"
+								onclick={() => heldentatLoeschen(h)}
+								disabled={arbeitet}
+								class="text-xs px-2 py-1 rounded border border-academy-steel/40 text-academy-steel hover:bg-academy-steel/20 shrink-0"
+							>
+								Löschen
+							</button>
+						</div>
+						{#if h.beschreibung}
+							<p class="text-sm text-academy-steel mt-2">{h.beschreibung}</p>
+						{/if}
+						{#if h.bilder?.length}
+							<div class="flex gap-2 mt-3 flex-wrap">
+								{#each h.bilder as pfad}
+									{#if links[pfad]}
+										<a href={links[pfad]} target="_blank" rel="noopener noreferrer">
+											<img
+												src={links[pfad]}
+												alt={h.titel}
+												class="w-28 h-28 object-cover rounded border border-academy-blue/40 hover:border-academy-gold/60 transition-colors"
+											/>
+										</a>
+									{:else}
+										<div
+											class="w-28 h-28 rounded border border-academy-blue/20 flex items-center justify-center text-xs text-academy-steel"
+										>
+											Bild nicht ladbar
+										</div>
+									{/if}
+								{/each}
+							</div>
+						{/if}
+					</article>
+				{/each}
+			</div>
+		{/if}
+	</section>
+
+	<!-- Mitglieder -->
+	<section class="mb-8">
+		<h3 class="text-xl font-heading text-academy-gold mb-3">🎓 Mitglieder des Hauses</h3>
+		{#if schueler.length === 0}
+			<p class="text-academy-steel text-sm">Noch niemand aufgenommen.</p>
+		{:else}
+			<div class="space-y-2">
+				{#each schueler as s}
+					<div
+						class="flex items-center justify-between p-3 rounded bg-academy-surface border border-academy-blue/20"
+					>
 						<div>
-							<span class="text-academy-parchment font-medium">{e.titel}</span>
-							{#if e.beschreibung}
-								<p class="text-academy-steel text-xs">{e.beschreibung}</p>
-							{/if}
+							<span class="text-academy-parchment font-bold">{s.akademiename}</span>
+							<span class="text-xs text-academy-steel ml-2">Stufe {s.level}</span>
+						</div>
+						<div class="flex items-center gap-4">
+							<span class="text-sm text-academy-cyan">{s.xp} XP</span>
+							<span class="text-sm text-academy-gold font-bold">{s.punkte} Punkte</span>
+							<button
+								type="button"
+								onclick={() => entlassen(s)}
+								class="text-xs px-2 py-1 rounded border border-academy-steel/40 text-academy-steel hover:bg-academy-steel/20"
+							>
+								Entfernen
+							</button>
 						</div>
 					</div>
 				{/each}
 			</div>
 		{/if}
 	</section>
+
+	<!-- Buchungen -->
+	<section class="mb-8">
+		<h3 class="text-xl font-heading text-academy-gold mb-3">📜 Letzte Punktebuchungen</h3>
+		{#if buchungen.length === 0}
+			<p class="text-academy-steel text-sm">Noch keine Buchungen.</p>
+		{:else}
+			<div class="space-y-2">
+				{#each buchungen as b}
+					<div
+						class="flex items-center justify-between p-3 rounded bg-academy-surface border border-academy-blue/20 text-sm"
+					>
+						<div>
+							<span class="text-academy-parchment">{b.schueler?.akademiename ?? '—'}</span>
+							<span class="text-academy-steel"> · {katLabel(b.kategorie)} · {b.grund}</span>
+						</div>
+						<div class="flex items-center gap-4 shrink-0">
+							<span class="text-xs text-academy-steel">{datumZeit(b.created_at)}</span>
+							<span
+								class={b.betrag >= 0 ? 'text-academy-gold font-bold' : 'text-red-400 font-bold'}
+							>
+								{b.betrag >= 0 ? '+' : ''}{b.betrag}
+							</span>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</section>
+
+	<!-- Chronik -->
+	{#if chronik.length > 0}
+		<section class="mb-8">
+			<h3 class="text-xl font-heading text-academy-gold mb-3">🕮 Chronik</h3>
+			<div class="space-y-2">
+				{#each chronik as c}
+					<div class="p-3 rounded bg-academy-surface border border-academy-blue/20 text-sm">
+						<div class="text-academy-parchment">{c.titel}</div>
+						{#if c.beschreibung}
+							<div class="text-academy-steel text-xs">{c.beschreibung}</div>
+						{/if}
+						<div class="text-academy-steel text-xs mt-1">{datumZeit(c.created_at)}</div>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
 {/if}

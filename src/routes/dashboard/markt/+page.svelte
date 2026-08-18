@@ -15,7 +15,7 @@
 	} from '$lib/supabase.js';
 
 	// Kinder haben in diesem System bewusst keinen eigenen Zugang.
-	// Der Punkteladen wird deshalb von der Lehrkraft bedient: sie wählt
+	// Der Markt wird deshalb von der Lehrkraft bedient: sie wählt
 	// ein Kind aus und löst die Belohnung für dieses Kind ein.
 
 	let rolle = $state<UserRole | null>(null);
@@ -190,14 +190,12 @@
 </script>
 
 <svelte:head>
-	<title>Punkteladen · Die Akademie</title>
+	<title>Der Markt · Die Akademie</title>
 </svelte:head>
 
 <div class="max-w-4xl mx-auto">
-	<h1 class="text-3xl font-heading text-academy-gold mb-2">🛒 Punkteladen</h1>
-	<p class="text-academy-steel mb-6">
-		Wähle ein Haus und ein Kind aus, um eine Belohnung einzulösen.
-	</p>
+	<h1 class="text-3xl font-heading text-academy-gold mb-2">🛒 Der Markt</h1>
+	<p class="text-academy-steel mb-6">Wähle ein Haus und ein Kind, um ein Privileg einzulösen.</p>
 
 	{#if laedt}
 		<div class="text-academy-steel py-8 text-center">Lade…</div>
@@ -208,7 +206,7 @@
 		</div>
 	{:else if rolle !== 'admin' && rolle !== 'teacher'}
 		<div class="bg-academy-surface border border-academy-blue/30 p-6 rounded text-academy-steel">
-			Für den Punkteladen brauchst du die Rolle <span class="text-academy-cyan">teacher</span>
+			Für den Markt brauchst du die Rolle <span class="text-academy-cyan">teacher</span>
 			oder <span class="text-academy-cyan">admin</span>.
 		</div>
 	{:else}
@@ -316,14 +314,14 @@
 			{/if}
 
 			<!-- Katalog -->
-			<h2 class="text-xl font-heading text-academy-gold mb-3">Belohnungen</h2>
+			<h2 class="text-xl font-heading text-academy-gold mb-3">Privilegien</h2>
 			{#if belohnungen.length === 0}
 				<div
 					class="text-center py-10 text-academy-steel bg-academy-surface rounded-lg border border-academy-blue/30"
 				>
 					<div class="text-4xl mb-3">🛒</div>
-					<p>Für dieses Haus sind noch keine Belohnungen angelegt.</p>
-					<a href="{base}/admin/belohnungen" class="text-sm underline">Belohnungen verwalten</a>
+					<p>Für dieses Haus sind noch keine Privilegien angelegt.</p>
+					<a href="{base}/admin/belohnungen" class="text-sm underline">Privilegien verwalten</a>
 				</div>
 			{:else}
 				<div class="grid gap-4 mb-8">

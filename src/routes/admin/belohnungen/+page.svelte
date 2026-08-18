@@ -78,7 +78,7 @@
 	}
 
 	async function handleDelete(id: string) {
-		if (!confirm('Belohnung wirklich löschen?')) return;
+		if (!confirm('Privileg wirklich streichen?')) return;
 		await deleteBelohnung(id);
 		await load();
 	}
@@ -103,12 +103,12 @@
 </script>
 
 <div class="flex justify-between items-center mb-6">
-	<h2 class="text-2xl font-heading text-academy-gold">Belohnungen verwalten</h2>
+	<h2 class="text-2xl font-heading text-academy-gold">Privilegien verwalten</h2>
 	<button
 		onclick={() => (showCreateForm = !showCreateForm)}
 		class="px-4 py-2 bg-academy-gold text-academy-bg rounded font-bold text-sm hover:bg-academy-gold/90 transition-colors"
 	>
-		{showCreateForm ? 'Abbrechen' : '+ Neue Belohnung'}
+		{showCreateForm ? 'Abbrechen' : '+ Neues Privileg'}
 	</button>
 </div>
 
@@ -186,14 +186,14 @@
 			</div>
 			<div>
 				<label for="new-bereich-id" class="block text-sm text-academy-parchment mb-1"
-					>Zu welchem Bereich (optional, Bereichs-ID)</label
+					>Zu welcher Fakultät? (leer = gilt überall)</label
 				>
 				<input
 					id="new-bereich-id"
 					type="text"
 					bind:value={newBereichId}
 					class="w-full px-3 py-2 rounded bg-academy-bg border border-academy-blue/50 text-academy-parchment focus:border-academy-gold focus:outline-none"
-					placeholder="Bereichs-ID oder leer für global"
+					placeholder="Fakultäts-ID oder leer"
 				/>
 			</div>
 		</div>
@@ -201,18 +201,18 @@
 			type="submit"
 			class="px-6 py-2 bg-academy-cyan text-white rounded font-bold text-sm hover:bg-academy-cyan/80 transition-colors"
 		>
-			Belohnung erstellen
+			Privileg anlegen
 		</button>
 	</form>
 {/if}
 
 {#if loading}
-	<div class="text-academy-steel">Lade Belohnungen…</div>
+	<div class="text-academy-steel">Lade Privilegien…</div>
 {:else if belohnungen.length === 0}
 	<div class="text-center py-12 text-academy-steel">
 		<div class="text-4xl mb-4">🪙</div>
-		<p>Noch keine Belohnungen angelegt.</p>
-		<p class="text-sm mt-2">Erstelle eine Belohnung, z.B. „Hausaufgaben-Joker“ für 100 Punkte.</p>
+		<p>Noch keine Privilegien angelegt.</p>
+		<p class="text-sm mt-2">Lege ein Privileg an, z.B. „Hausaufgaben-Joker“ für 50 Punkte.</p>
 	</div>
 {:else}
 	<div class="overflow-x-auto">
@@ -241,7 +241,7 @@
 					>
 					<th
 						class="px-4 py-2 text-left text-xs font-medium text-academy-steel uppercase tracking-wider"
-						>Bereich</th
+						>Fakultät</th
 					>
 					<th
 						class="px-4 py-2 text-left text-xs font-medium text-academy-steel uppercase tracking-wider"
@@ -337,7 +337,7 @@
 									type="text"
 									bind:value={editBereichId}
 									class="w-full px-2 py-1 bg-academy-bg border border-academy-blue/30 text-academy-parchment rounded"
-									placeholder="Bereichs-ID (optional)"
+									placeholder="Fakultäts-ID (optional)"
 								/>
 							{:else}
 								{b.bereich_id ?? '—'}

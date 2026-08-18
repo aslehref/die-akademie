@@ -156,15 +156,15 @@
 				class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors"
 			>
 				<div class="text-3xl mb-2">🏠</div>
-				<h3 class="font-heading text-academy-gold font-bold">Dashboard</h3>
-				<p class="text-sm text-academy-steel">Meine Bereiche und Aktivitäten</p>
+				<h3 class="font-heading text-academy-gold font-bold">Große Halle</h3>
+				<p class="text-sm text-academy-steel">Fakultäten, Kapitel und Chronik</p>
 			</a>
 			<a
 				href="{base}/dashboard/markt"
 				class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors"
 			>
 				<div class="text-3xl mb-2">🛒</div>
-				<h3 class="font-heading text-academy-gold font-bold">Markt</h3>
+				<h3 class="font-heading text-academy-gold font-bold">Der Markt</h3>
 				<p class="text-sm text-academy-steel">Punkte einlösen</p>
 			</a>
 			<a
@@ -172,8 +172,8 @@
 				class="bg-academy-surface rounded-lg p-4 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors"
 			>
 				<div class="text-3xl mb-2">⚙️</div>
-				<h3 class="font-heading text-academy-gold font-bold">Administration</h3>
-				<p class="text-sm text-academy-steel">Bereiche, Häuser, Quests verwalten</p>
+				<h3 class="font-heading text-academy-gold font-bold">Lehrerzimmer</h3>
+				<p class="text-sm text-academy-steel">Fakultäten, Häuser und Orden verwalten</p>
 			</a>
 		</section>
 
