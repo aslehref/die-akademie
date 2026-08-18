@@ -303,6 +303,28 @@ export async function getQuests(scope?: {
 	return await query;
 }
 
+export async function updateQuest(
+	id: string,
+	data: Partial<{
+		titel: string;
+		beschreibung: string;
+		schwierigkeit: number;
+		belohnung_hauspunkte: number;
+		belohnung_xp: number;
+		gültigkeitsbereich: string;
+		bereich_id: string | null;
+		startdatum: string;
+		enddatum: string | null;
+		status: string;
+	}>
+) {
+	return await supabase.from('quests').update(data).eq('id', id).select().single();
+}
+
+export async function deleteQuest(id: string) {
+	return await supabase.from('quests').delete().eq('id', id);
+}
+
 export async function createQuest(data: {
 	titel: string;
 	beschreibung: string;

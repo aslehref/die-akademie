@@ -1,5 +1,15 @@
 <script lang="ts">
 	import '../app.css';
+
+	// Selbst ausgeliefert statt von Google geladen: ein eingebundenes
+	// Google-Font überträgt die IP jedes Besuchers an Google.
+	import '@fontsource/cinzel/latin-400.css';
+	import '@fontsource/cinzel/latin-600.css';
+	import '@fontsource/cinzel/latin-700.css';
+	import '@fontsource/lora/latin-400.css';
+	import '@fontsource/lora/latin-400-italic.css';
+	import '@fontsource/lora/latin-600.css';
+	import '@fontsource/lora/latin-700.css';
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { getCurrentUser, getUserRole, signOut } from '$lib/supabase';

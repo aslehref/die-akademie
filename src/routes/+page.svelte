@@ -14,6 +14,8 @@
 	// Das Schuljahr laeuft von September bis August und damit ueber den
 	// Jahreswechsel. Ein reiner Vergleich der Kalendermonate ist deshalb
 	// falsch: Januar (1) ist im Schuljahr SPAETER als September (9).
+	const spitze = $derived(Math.max(0, ...haeuser.map((h) => h.hauspunkte ?? 0)));
+
 	const SCHULJAHR_START = 9;
 
 	function schuljahrPosition(monat: number) {
@@ -79,11 +81,16 @@
 </svelte:head>
 
 <div class="max-w-4xl mx-auto">
-	<!-- Header -->
-	<div class="mb-10">
-		<h1 class="text-4xl font-heading text-academy-gold mb-2">Die Akademie</h1>
-		<p class="text-academy-steel text-lg">Schuljahr {currentYear}</p>
-	</div>
+	<!-- Kopf -->
+	<header class="mb-12 text-center">
+		<div class="text-5xl mb-3" aria-hidden="true">✦</div>
+		<h1 class="text-5xl font-heading text-academy-gold mb-3">Die Akademie</h1>
+		<p class="text-academy-steel tracking-[0.3em] text-sm uppercase">
+			Schuljahr {currentYear}
+		</p>
+		<hr class="zierlinie mt-6 max-w-sm mx-auto" />
+		<p class="text-academy-steel italic mt-4 text-sm">Wissen. Gemeinschaft. Verantwortung.</p>
+	</header>
 
 	{#if loading}
 		<div class="text-academy-steel text-center py-8">Lade Akademie…</div>
@@ -104,25 +111,41 @@
 			{:else}
 				<div class="space-y-3">
 					{#each haeuser as haus, i}
+						{@const anteil = spitze > 0 ? Math.max(3, ((haus.hauspunkte ?? 0) / spitze) * 100) : 3}
 						<div
-							class="flex items-center justify-between p-3 rounded bg-academy-bg/50 border border-academy-blue/20"
-							style="border-left: 4px solid {haus.farbe_primär || '#1e3a5f'}"
+							class="relative overflow-hidden rounded-lg bg-academy-bg/60 border border-academy-blue/20 {i ===
+							0
+								? 'schimmert'
+								: ''}"
+							style="border-left: 4px solid {haus.farbe_primär || '#24406a'}"
 						>
-							<div class="flex items-center gap-3">
-								<span class="text-xl">
-									{#if i === 0}🥇
-									{:else if i === 1}🥈
-									{:else if i === 2}🥉
-									{:else}{i + 1}.
-									{/if}
-								</span>
-								<div>
-									<span class="font-bold text-academy-parchment">{haus.hausname}</span>
+							<!-- Der Balken zeigt den Abstand zur Spitze, nicht nur die Zahl. -->
+							<div
+								class="absolute inset-y-0 left-0 opacity-25"
+								style="width: {anteil}%; background: linear-gradient(90deg, {haus.farbe_primär ||
+									'#24406a'}, transparent);"
+								aria-hidden="true"
+							></div>
+							<div class="relative flex items-center justify-between p-4 gap-3">
+								<div class="flex items-center gap-4 min-w-0">
+									<span
+										class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center font-heading text-sm border"
+										style="border-color: {['#d4a74a', '#c0c0c0', '#b87333'][i] ??
+											'#3a4560'}; color: {['#f2d99b', '#e8e8e8', '#d89a6a'][i] ?? '#97a3ba'};"
+									>
+										{i + 1}
+									</span>
+									<div class="min-w-0">
+										<div class="font-bold text-academy-parchment truncate">{haus.hausname}</div>
+										{#if i === 0}
+											<div class="text-xs text-academy-gold">an der Spitze</div>
+										{/if}
+									</div>
 								</div>
+								<span class="text-academy-gold font-bold font-heading shrink-0">
+									{haus.hauspunkte?.toLocaleString('de-DE') ?? 0}
+								</span>
 							</div>
-							<span class="text-academy-gold font-bold"
-								>{haus.hauspunkte?.toLocaleString() ?? 0} Punkte</span
-							>
 						</div>
 					{/each}
 				</div>
@@ -131,8 +154,14 @@
 
 		<!-- Wochenquest -->
 		{#if wochenquest}
-			<section class="mb-10 bg-academy-surface rounded-lg p-6 border border-academy-gold/30">
-				<h2 class="text-2xl font-heading text-academy-gold mb-2">⚔️ Wochenquest</h2>
+			<section
+				class="mb-10 bg-academy-surface rounded-lg p-6 border border-academy-gold/40 relative overflow-hidden"
+			>
+				<div
+					class="absolute -top-16 -right-16 w-56 h-56 rounded-full opacity-[0.07] bg-academy-gold blur-2xl"
+					aria-hidden="true"
+				></div>
+				<h2 class="text-2xl font-heading text-academy-gold mb-2 relative">⚔️ Wochenquest</h2>
 				<h3 class="text-lg font-bold text-academy-parchment mb-1">{wochenquest.titel}</h3>
 				<p class="text-academy-steel mb-3">{wochenquest.beschreibung}</p>
 				<div class="flex items-center gap-3 text-sm flex-wrap">
@@ -189,7 +218,9 @@
 							<div
 								class="p-3 rounded bg-academy-bg/50 border text-center border-academy-blue/10 opacity-40"
 							>
-								<div class="text-2xl mb-1">{ort.icon}</div>
+								<div class="text-3xl mb-2 transition-transform group-hover:scale-110">
+									{ort.icon}
+								</div>
 								<div class="text-xs font-bold text-academy-steel">{ort.name}</div>
 								<div class="text-xs text-academy-steel mt-1">
 									🔒 Monat {ort.freischaltung_monat}
@@ -198,7 +229,7 @@
 						{:else if istGebaut(ort.route)}
 							<a
 								href="{base}{ort.route}"
-								class="p-3 rounded bg-academy-bg/50 border text-center transition-colors border-academy-blue/20 hover:border-academy-gold/50"
+								class="group p-4 rounded-lg bg-academy-bg/50 border text-center transition-all border-academy-blue/20 hover:border-academy-gold/60 hover:bg-academy-bg/80 hover:shadow-[0_0_24px_-6px_rgba(212,167,74,0.5)]"
 							>
 								<div class="text-2xl mb-1">{ort.icon}</div>
 								<div class="text-xs font-bold text-academy-parchment">{ort.name}</div>
