@@ -13,12 +13,31 @@
 		addChronik,
 		type UserRole
 	} from '$lib/supabase.js';
+	import {
+		meineDaten,
+		meinGuthaben,
+		selbstEinloesen,
+		meineEinloesungen,
+		type MeineDaten
+	} from '$lib/meins.js';
 
-	// Kinder haben in diesem System bewusst keinen eigenen Zugang.
-	// Der Markt wird deshalb von der Lehrkraft bedient: sie wählt
-	// ein Kind aus und löst die Belohnung für dieses Kind ein.
+	// Der Markt hat zwei Gesichter.
+	//
+	// Ein Kind sieht seinen eigenen Stand und gibt sein eigenes Guthaben
+	// aus – sofort, ohne Rückfrage. Ein Guthaben, das erst erlaubt werden
+	// muss, ist keines. Die Datenbank verhindert ein Minus, und die
+	// Lehrkraft bekommt für jede Einlösung eine Meldung und kann sie
+	// zurücknehmen.
+	//
+	// Eine Lehrkraft sieht denselben Markt für ein ausgewähltes Kind –
+	// für alle, die noch keinen eigenen Zugang haben.
 
 	let rolle = $state<UserRole | null>(null);
+	let ich = $state<MeineDaten | null>(null);
+	let meineBelohnungen = $state<any[]>([]);
+	let meinVerlauf = $state<any[]>([]);
+	let meinStand = $state({ punkte: 0, xp: 0, level: 1 });
+	let meineAuswahl = $state<any>(null);
 	let lehrerId = $state<string | null>(null);
 
 	let haeuser = $state<any[]>([]);
@@ -57,6 +76,12 @@
 			lehrerId = user.id;
 			rolle = await getUserRole(user.id);
 
+			if (rolle === 'schueler') {
+				ich = await meineDaten(user.id);
+				if (ich) await ladeMeinen();
+				return;
+			}
+
 			const { data, error } = await supabase
 				.from('haeuser')
 				.select('id, hausname, name, bereich_id')
@@ -69,6 +94,48 @@
 			laedt = false;
 		}
 	});
+
+	// --- Der Markt für ein Kind ---
+
+	async function ladeMeinen() {
+		if (!ich) return;
+		// getBelohnungen filtert zusätzlich in der Datenbank: ein Kind
+		// bekommt ohnehin nur die Privilegien seiner Fakultät und die
+		// fakultätslosen zu sehen.
+		const [b, v, s] = await Promise.all([
+			getBelohnungen(ich.bereich.id),
+			meineEinloesungen(ich.schueler.id),
+			meinGuthaben(ich.schueler.id)
+		]);
+		meineBelohnungen = b.data ?? [];
+		meinVerlauf = v.data ?? [];
+		meinStand = s as { punkte: number; xp: number; level: number };
+	}
+
+	async function selbstKaufen() {
+		const b = meineAuswahl;
+		if (!b || !ich || arbeitet) return;
+		arbeitet = true;
+		fehler = '';
+		meldung = '';
+		try {
+			const { error } = await selbstEinloesen(ich.schueler.id, b);
+			if (error) throw error;
+			meldung = `„${b.name}“ ist deins. Deine Lehrkraft wurde benachrichtigt.`;
+			meineAuswahl = null;
+			await ladeMeinen();
+		} catch (e: any) {
+			// Der Wächter in der Datenbank meldet fehlendes Guthaben im
+			// Klartext – diese Meldung ist für Kinder verständlicher als
+			// alles, was der Browser daraus machen würde.
+			fehler = e?.message ?? 'Das hat nicht geklappt.';
+			meineAuswahl = null;
+		} finally {
+			arbeitet = false;
+		}
+	}
+
+	// --- Der Markt, von der Lehrkraft bedient ---
 
 	async function hausGewaehlt() {
 		schuelerId = '';
@@ -195,7 +262,13 @@
 
 <div class="max-w-4xl mx-auto">
 	<h1 class="text-3xl font-heading text-academy-gold mb-2">🛒 Der Markt</h1>
-	<p class="text-academy-steel mb-6">Wähle ein Haus und ein Kind, um ein Privileg einzulösen.</p>
+	{#if rolle === 'schueler'}
+		<p class="text-academy-steel mb-6">
+			Hier gibst du aus, was du dir verdient hast. Deine Erfahrung bleibt dabei unangetastet.
+		</p>
+	{:else}
+		<p class="text-academy-steel mb-6">Wähle ein Haus und ein Kind, um ein Privileg einzulösen.</p>
+	{/if}
 
 	{#if laedt}
 		<div class="text-academy-steel py-8 text-center">Lade…</div>
@@ -204,10 +277,158 @@
 			<p class="font-bold mb-1">Die Daten konnten nicht geladen werden.</p>
 			<p class="text-sm">{ladeFehler}</p>
 		</div>
+	{:else if rolle === 'schueler'}
+		{#if !ich}
+			<div class="bg-academy-surface border border-academy-blue/30 p-6 rounded text-academy-steel">
+				Zu deinem Zugang gehört noch kein Haus. Sag deiner Lehrkraft Bescheid.
+			</div>
+		{:else}
+			<!-- Mein Stand -->
+			<div class="flex flex-wrap gap-4 mb-6">
+				<div class="bg-academy-surface rounded-lg px-5 py-3 border border-academy-gold/40">
+					<div class="text-3xl font-heading text-academy-gold">{meinStand.punkte}</div>
+					<div class="text-sm text-academy-steel">dein Guthaben</div>
+				</div>
+				<div class="bg-academy-surface rounded-lg px-5 py-3 border border-academy-blue/30">
+					<div class="text-2xl font-bold text-academy-cyan">{meinStand.xp}</div>
+					<div class="text-sm text-academy-steel">Erfahrung (bleibt)</div>
+				</div>
+				<div class="bg-academy-surface rounded-lg px-5 py-3 border border-academy-blue/30">
+					<div class="text-2xl font-bold text-academy-parchment">{meinStand.level}</div>
+					<div class="text-sm text-academy-steel">Stufe</div>
+				</div>
+				<div class="bg-academy-surface rounded-lg px-5 py-3 border border-academy-blue/30">
+					<div class="text-academy-parchment font-bold">{ich.haus.hausname}</div>
+					<div class="text-sm text-academy-steel">
+						{ich.bereich.titel?.trim() || ich.bereich.name}
+					</div>
+				</div>
+			</div>
+
+			{#if meldung}
+				<div
+					class="bg-academy-green/30 border border-academy-green text-academy-parchment p-3 rounded mb-4"
+				>
+					{meldung}
+				</div>
+			{/if}
+			{#if fehler}
+				<div class="bg-red-900/30 border border-red-700/50 text-red-200 p-3 rounded mb-4">
+					{fehler}
+				</div>
+			{/if}
+
+			{#if meineAuswahl}
+				<div class="bg-academy-surface border border-academy-gold/60 rounded-lg p-5 mb-6">
+					<p class="text-academy-parchment mb-1">
+						Du löst <span class="font-bold text-academy-gold">„{meineAuswahl.name}“</span>
+						für {meineAuswahl.kosten} Punkte ein.
+					</p>
+					<p class="text-sm text-academy-steel mb-4">
+						Danach bleiben dir {meinStand.punkte - meineAuswahl.kosten} Punkte. Deine Erfahrung und die
+						Punkte deines Hauses ändern sich nicht.
+					</p>
+					<div class="flex gap-3">
+						<button
+							type="button"
+							onclick={selbstKaufen}
+							disabled={arbeitet}
+							class="px-4 py-2 rounded bg-academy-gold text-academy-bg font-bold disabled:opacity-50"
+						>
+							{arbeitet ? 'Einen Moment…' : 'Ja, einlösen'}
+						</button>
+						<button
+							type="button"
+							onclick={() => (meineAuswahl = null)}
+							disabled={arbeitet}
+							class="px-4 py-2 rounded border border-academy-steel/50 text-academy-steel"
+						>
+							Doch nicht
+						</button>
+					</div>
+				</div>
+			{/if}
+
+			<h2 class="text-xl font-heading text-academy-gold mb-3">Privilegien</h2>
+			{#if meineBelohnungen.length === 0}
+				<div
+					class="text-center py-10 text-academy-steel bg-academy-surface rounded-lg border border-academy-blue/30"
+				>
+					<div class="text-4xl mb-3">🛒</div>
+					<p>In deiner Fakultät gibt es noch nichts zu holen.</p>
+				</div>
+			{:else}
+				<div class="grid gap-4 mb-8">
+					{#each meineBelohnungen as b (b.id)}
+						{@const bezahlbar = meinStand.punkte >= b.kosten}
+						<button
+							type="button"
+							onclick={() => {
+								fehler = '';
+								meldung = '';
+								meineAuswahl = b;
+							}}
+							disabled={!bezahlbar || arbeitet}
+							class="w-full text-left bg-academy-surface rounded-lg p-5 border transition-colors
+								{bezahlbar
+								? 'border-academy-blue/30 hover:border-academy-gold/60 cursor-pointer'
+								: 'border-academy-blue/10 opacity-50 cursor-not-allowed'}"
+						>
+							<div class="flex items-start justify-between gap-4">
+								<div class="flex-1">
+									<h3 class="font-heading text-academy-gold font-bold">{b.name}</h3>
+									<p class="text-academy-steel text-sm">{b.beschreibung}</p>
+									<p class="text-academy-steel text-xs mt-2">
+										{kategorieLabel[b.kategorie] ?? b.kategorie}
+									</p>
+								</div>
+								<div class="text-right shrink-0">
+									<div
+										class="text-3xl font-bold {bezahlbar
+											? 'text-academy-gold'
+											: 'text-academy-steel'}"
+									>
+										{b.kosten}
+									</div>
+									<div class="text-xs text-academy-steel">Punkte</div>
+									{#if !bezahlbar}
+										<div class="text-xs text-academy-steel mt-1">
+											dir fehlen {b.kosten - meinStand.punkte}
+										</div>
+									{/if}
+								</div>
+							</div>
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if meinVerlauf.length > 0}
+				<h2 class="text-xl font-heading text-academy-gold mb-3">Das hast du dir geholt</h2>
+				<div class="space-y-2">
+					{#each meinVerlauf as e (e.id)}
+						<div
+							class="flex items-center justify-between gap-3 p-3 rounded bg-academy-surface border border-academy-blue/20"
+							class:opacity-50={e.storniert}
+						>
+							<div>
+								<div class="text-academy-parchment">
+									{e.belohnung_name}
+									{#if e.storniert}
+										<span class="text-xs text-academy-steel">(zurückgenommen)</span>
+									{/if}
+								</div>
+								<div class="text-xs text-academy-steel">{datum(e.created_at)}</div>
+							</div>
+							<span class="text-academy-gold font-bold shrink-0">−{e.kosten}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		{/if}
 	{:else if rolle !== 'admin' && rolle !== 'teacher'}
 		<div class="bg-academy-surface border border-academy-blue/30 p-6 rounded text-academy-steel">
-			Für den Markt brauchst du die Rolle <span class="text-academy-cyan">teacher</span>
-			oder <span class="text-academy-cyan">admin</span>.
+			Für den Markt brauchst du einen Zugang als Schüler*in oder als Lehrkraft.
 		</div>
 	{:else}
 		<!-- Auswahl -->

@@ -276,6 +276,89 @@ export async function updateSchueler(
 	return await supabase.from('schueler').update(data).eq('id', id).select().single();
 }
 
+// === Meldungen an die Lehrkraft ===\
+/**
+ * Das Postfach im Lehrerzimmer. Kinder erzeugen die Einträge nicht
+ * selbst – das erledigen Trigger in der Datenbank, sonst bliebe eine
+ * Meldung aus, sobald jemand das Fenster zu früh schließt.
+ */
+export async function getMeldungen(nurOffene = true, limit = 50) {
+	let q = supabase.from('meldungen').select('*').order('created_at', { ascending: false });
+	if (nurOffene) q = q.eq('erledigt', false);
+	return await q.limit(limit);
+}
+
+export async function zaehleOffeneMeldungen() {
+	const { count } = await supabase
+		.from('meldungen')
+		.select('id', { count: 'exact', head: true })
+		.eq('erledigt', false);
+	return count ?? 0;
+}
+
+export async function meldungErledigen(id: string, lehrerId: string | null) {
+	return await supabase
+		.from('meldungen')
+		.update({ erledigt: true, erledigt_von: lehrerId, erledigt_am: new Date().toISOString() })
+		.eq('id', id);
+}
+
+// === Einreichungen von Kindern ===\
+export async function getEinreichungen() {
+	return await supabase
+		.from('heldentaten')
+		.select('*, haus:haus_id(hausname, slug, bereich_id), kind:eingereicht_von(akademiename)')
+		.eq('status', 'eingereicht')
+		.order('created_at', { ascending: false });
+}
+
+/**
+ * Eine Einreichung anerkennen. Zwei Dinge geschehen dabei getrennt:
+ * die Heldentat wird sichtbar, und – falls Punkte vergeben werden –
+ * es entsteht eine Buchung. Die Buchung ist der einzige Ort, an dem
+ * Punkte entstehen; die Heldentat merkt sich nur, wie viele es waren.
+ */
+export async function heldentatAnerkennen(
+	heldentat: { id: string; haus_id: string; eingereicht_von: string | null },
+	punkte: number,
+	rueckmeldung: string,
+	lehrerId: string | null
+) {
+	if (punkte > 0 && heldentat.eingereicht_von) {
+		const { error } = await awardPoints({
+			schueler_id: heldentat.eingereicht_von,
+			haus_id: heldentat.haus_id,
+			betrag: punkte,
+			kategorie: 'verantwortung',
+			grund: 'Heldentat anerkannt',
+			lehrer_id: lehrerId
+		});
+		if (error) return { error };
+	}
+	return await supabase
+		.from('heldentaten')
+		.update({
+			status: 'sichtbar',
+			punkte,
+			rueckmeldung: rueckmeldung.trim() || null,
+			bewertet_von: lehrerId,
+			bewertet_am: new Date().toISOString()
+		})
+		.eq('id', heldentat.id);
+}
+
+export async function heldentatAblehnen(id: string, rueckmeldung: string, lehrerId: string | null) {
+	return await supabase
+		.from('heldentaten')
+		.update({
+			status: 'abgelehnt',
+			rueckmeldung: rueckmeldung.trim() || null,
+			bewertet_von: lehrerId,
+			bewertet_am: new Date().toISOString()
+		})
+		.eq('id', id);
+}
+
 // === Punkte ===\
 export async function awardPoints(data: {
 	schueler_id: string;

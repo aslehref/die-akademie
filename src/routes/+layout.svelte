@@ -13,6 +13,7 @@
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { supabase, getCurrentUser, getUserRole, signOut } from '$lib/supabase';
+	import { meineDaten, type MeineDaten } from '$lib/meins';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import type { User } from '@supabase/supabase-js';
@@ -22,6 +23,15 @@
 	let role: UserRole | null = $state(null);
 	let loading = $state(true);
 
+	// Ein Kind gehört zu genau einer Fakultät. Die Seitenleiste soll
+	// deshalb SEINE Fakultät zeigen und nicht alle – der Weg dorthin ist
+	// für ein Kind der wichtigste im ganzen Haus.
+	let ich = $state<MeineDaten | null>(null);
+
+	async function ladeMich(id: string | null) {
+		ich = id && role === 'schueler' ? await meineDaten(id) : null;
+	}
+
 	onMount(() => {
 		// onMount allein genügt nicht: Nach dem Anmelden wechselt die App per
 		// goto() die Seite, ohne neu zu laden – das Layout hätte den frisch
@@ -30,6 +40,7 @@
 		const { data } = supabase.auth.onAuthStateChange(async (_ereignis, sitzung) => {
 			user = sitzung?.user ?? null;
 			role = user ? await getUserRole(user.id) : null;
+			await ladeMich(user?.id ?? null);
 			loading = false;
 		});
 
@@ -38,6 +49,7 @@
 			const currentUser = await getCurrentUser();
 			user = currentUser;
 			if (currentUser) role = await getUserRole(currentUser.id);
+			await ladeMich(currentUser?.id ?? null);
 			loading = false;
 		})();
 
@@ -48,6 +60,7 @@
 		await signOut();
 		user = null;
 		role = null;
+		ich = null;
 		goto(`${base}/login`);
 	}
 
@@ -66,15 +79,37 @@
 		<aside class="w-64 bg-academy-surface border-r border-academy-blue/30 flex flex-col">
 			<div class="p-4 border-b border-academy-blue/30">
 				<h1 class="text-xl font-heading text-academy-gold">Die Akademie</h1>
-				<p class="text-xs text-academy-steel mt-1">
-					{user.email}
-					{#if role}
-						· <span class="text-academy-cyan">{role}</span>
-					{/if}
-				</p>
+				{#if ich}
+					<!-- Bei Kindern steht nie die technische Adresse da. Sie ist
+					     nichts, was ein Kind je sehen oder nennen müsste. -->
+					<p class="text-xs text-academy-steel mt-1">
+						{ich.schueler.akademiename} ·
+						<span class="text-academy-cyan">
+							{ich.haus.hausname}
+						</span>
+					</p>
+					<p class="text-xs text-academy-gold mt-0.5">
+						{ich.schueler.punkte} Punkte · Stufe {ich.schueler.level}
+					</p>
+				{:else}
+					<p class="text-xs text-academy-steel mt-1">
+						{user.email}
+						{#if role}
+							· <span class="text-academy-cyan">{role}</span>
+						{/if}
+					</p>
+				{/if}
 			</div>
 
 			<nav class="flex-1 p-4 space-y-2">
+				{#if ich}
+					<a
+						href="{base}/fakultaet/{ich.bereich.slug}"
+						class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
+					>
+						✦ Meine Fakultät
+					</a>
+				{/if}
 				<a
 					href="{base}/dashboard"
 					class="block px-3 py-2 rounded hover:bg-academy-blue/40 text-academy-parchment transition-colors"
@@ -94,16 +129,16 @@
 					👑 Das Finale
 				</a>
 
-				<div class="border-t border-academy-blue/30 my-4 pt-4">
-					{#if role === 'admin'}
+				{#if role === 'admin' || role === 'teacher'}
+					<div class="border-t border-academy-blue/30 my-4 pt-4">
 						<a
 							href="{base}/admin"
 							class="block px-3 py-2 rounded hover:bg-academy-magenta/30 text-academy-gold transition-colors"
 						>
 							⚙️ Lehrerzimmer
 						</a>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</nav>
 
 			<div class="p-4 border-t border-academy-blue/30">

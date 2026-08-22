@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { base } from '$app/paths';
-	import { getCurrentUser, getUserRole, type UserRole } from '$lib/supabase';
+	import { getCurrentUser, getUserRole, zaehleOffeneMeldungen, type UserRole } from '$lib/supabase';
 
 	let { children }: { children: import('svelte').Snippet } = $props();
 
@@ -11,15 +11,18 @@
 	// in einer Oberflaeche landet, in der ohnehin jede Aktion scheitern wuerde.
 	let rolle = $state<UserRole | null>(null);
 	let geprueft = $state(false);
+	let offen = $state(0);
 
 	onMount(async () => {
 		const user = await getCurrentUser();
 		if (user) rolle = await getUserRole(user.id);
 		geprueft = true;
+		if (rolle === 'admin' || rolle === 'teacher') offen = await zaehleOffeneMeldungen();
 	});
 
 	const tabs = [
 		{ label: 'Überblick', href: base + '/admin', icon: '🏠' },
+		{ label: 'Postfach', href: base + '/admin/meldungen', icon: '📨' },
 		{ label: 'Fakultäten', href: base + '/admin/bereiche', icon: '📚' },
 		{ label: 'Quests', href: base + '/admin/quests', icon: '⚔️' },
 		{ label: 'Privilegien', href: base + '/admin/belohnungen', icon: '🪙' },
@@ -61,6 +64,13 @@
 				>
 					{tab.icon}
 					{tab.label}
+					{#if tab.label === 'Postfach' && offen > 0}
+						<span
+							class="ml-1 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-academy-gold text-academy-bg text-[0.7rem] font-bold"
+						>
+							{offen}
+						</span>
+					{/if}
 				</a>
 			{/each}
 		</nav>

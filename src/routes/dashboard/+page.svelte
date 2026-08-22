@@ -11,6 +11,14 @@
 	let loading = $state(true);
 	let rolle = $state<UserRole | null>(null);
 
+	// Ein Kind sieht hier nur seine eigene Fakultät. Alle anderen stehen
+	// ihm offen zum Anschauen – aber nicht als Teil seiner Halle.
+	const sichtbareBereiche = $derived(
+		schuelerInfo?.haus?.bereich_id
+			? bereiche.filter((b) => b.id === schuelerInfo.haus.bereich_id)
+			: bereiche
+	);
+
 	onMount(async () => {
 		loading = true;
 		const user = await getCurrentUser();
@@ -97,22 +105,27 @@
 		<!-- Meine Fächer / Klassenstufen -->
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
 			<section class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30">
-				<h2 class="text-xl font-heading text-academy-gold mb-4">📚 Fakultäten</h2>
-				{#if bereiche.length === 0}
+				<h2 class="text-xl font-heading text-academy-gold mb-4">
+					{schuelerInfo ? '✦ Meine Fakultät' : '📚 Fakultäten'}
+				</h2>
+				{#if sichtbareBereiche.length === 0}
 					<p class="text-academy-steel text-sm">Noch keine Fakultäten vorhanden.</p>
 				{:else}
 					<div class="space-y-2">
-						{#each bereiche as b}
+						{#each sichtbareBereiche as b (b.id)}
+							<!-- Der Weg führt in den Kursbereich, NICHT ins Lehrerzimmer.
+							     Vorher landete hier auch ein Kind auf einer Seite, die
+							     ihm sagte, sie sei nur für Lehrkräfte. -->
 							<a
-								href="{base}/admin/bereiche/{b.slug}"
+								href="{base}/fakultaet/{b.slug}"
 								class="flex items-center gap-3 p-3 rounded bg-academy-bg/50 border border-academy-blue/20 hover:border-academy-gold/50 transition-colors"
 							>
-								<span class="text-xl">{b.typ === 'fach' ? '📖' : '🎓'}</span>
+								<span class="text-xl">
+									{b.typ === 'klassenstufe' ? '🎓' : b.typ === 'allgemein' ? '✦' : '📖'}
+								</span>
 								<div>
-									<div class="font-bold text-academy-parchment">{b.name}</div>
-									<div class="text-xs text-academy-steel">
-										{b.typ === 'fach' ? 'Fach' : 'Klassenstufe'}
-									</div>
+									<div class="font-bold text-academy-parchment">{b.titel?.trim() || b.name}</div>
+									<div class="text-xs text-academy-steel">{b.name}</div>
 								</div>
 							</a>
 						{/each}
