@@ -9,3 +9,6 @@ build/
 .vscode/settings.json
 src/lib/paraglide/
 project.inlang/
+# Ablage fuer Dateien, die geloescht werden sollen. Ich kann auf
+# deiner Platte nichts loeschen, nur hierher verschieben.
+_to_delete/

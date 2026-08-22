@@ -68,12 +68,15 @@
 		<div>
 			<a
 				href="{base}/admin/bereiche"
-				class="text-academy-steel text-sm hover:text-academy-parchment">← Bereiche</a
+				class="text-academy-steel text-sm hover:text-academy-parchment">← Fakultäten</a
 			>
 			<h2 class="text-2xl font-heading text-academy-gold mt-1">
-				{bereich.typ === 'fach' ? '📖' : '🎓'}
-				{bereich.name}
+				{bereich.typ === 'klassenstufe' ? '🎓' : bereich.typ === 'allgemein' ? '✦' : '📖'}
+				{bereich.titel?.trim() || bereich.name}
 			</h2>
+			{#if bereich.titel?.trim() && bereich.titel.trim() !== bereich.name}
+				<p class="text-xs text-academy-steel tracking-[0.15em] uppercase">{bereich.name}</p>
+			{/if}
 			{#if bereich.motto}
 				<p class="text-sm text-academy-steel italic">„{bereich.motto}“</p>
 			{/if}

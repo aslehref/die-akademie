@@ -51,7 +51,25 @@ export async function getBereich(slug: string) {
 	return await supabase.from('bereiche').select('*').eq('slug', slug).single();
 }
 
+/** Aus einem Titel eine brauchbare Adresse machen. */
+export function zuSlug(text: string): string {
+	return (
+		text
+			.toLowerCase()
+			.replace(/ä/g, 'ae')
+			.replace(/ö/g, 'oe')
+			.replace(/ü/g, 'ue')
+			.replace(/ß/g, 'ss')
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '')
+			.slice(0, 60) || 'fakultaet'
+	);
+}
+
+// titel = der große Name ("Orden der Stillen Wasser")
+// name  = Fach oder Jahrgang als Untertitel ("Religion 7")
 export async function createBereich(data: {
+	titel: string;
 	name: string;
 	typ: 'fach' | 'klassenstufe' | 'allgemein';
 	beschreibung?: string | null;
@@ -62,14 +80,12 @@ export async function createBereich(data: {
 	return await supabase
 		.from('bereiche')
 		.insert({
+			titel: data.titel,
 			name: data.name,
-			slug: data.name
-				.toLowerCase()
-				.replace(/[^a-z0-9äöü]/g, '-')
-				.replace(/-+/g, '-'),
+			slug: zuSlug(data.titel),
 			typ: data.typ,
 			beschreibung: data.beschreibung,
-			farbe_primär: data.farbe_primär || '#1e3a5f',
+			farbe_primär: data.farbe_primär || '#24406a',
 			farbe_sekundär: data.farbe_sekundär || '#d4a74a',
 			motto: data.motto
 		})
@@ -80,14 +96,28 @@ export async function createBereich(data: {
 export async function updateBereich(
 	id: string,
 	data: Partial<{
+		titel: string;
 		name: string;
-		beschreibung: string;
+		typ: string;
+		beschreibung: string | null;
 		farbe_primär: string;
 		farbe_sekundär: string;
-		motto: string;
+		motto: string | null;
 	}>
 ) {
 	return await supabase.from('bereiche').update(data).eq('id', id).select().single();
+}
+
+/** Zählt, was beim Löschen einer Fakultät mitgeht. */
+export async function bereichLoeschUmfang(bereichId: string) {
+	const { data: haeuser } = await supabase.from('haeuser').select('id').eq('bereich_id', bereichId);
+	const ids = (haeuser ?? []).map((h) => h.id);
+	if (ids.length === 0) return { haeuser: 0, schueler: 0 };
+	const { count } = await supabase
+		.from('schueler')
+		.select('id', { count: 'exact', head: true })
+		.in('haus_id', ids);
+	return { haeuser: ids.length, schueler: count ?? 0 };
 }
 
 export async function deleteBereich(id: string) {
@@ -293,6 +323,61 @@ export async function getChronik(hausId: string) {
 		.eq('haus_id', hausId)
 		.order('created_at', { ascending: false })
 		.limit(20);
+}
+
+// === Öffentliche Halle ===\
+/**
+ * Ein Stundenglas je Haus. Kommt aus einer Datenbankfunktion, nicht aus
+ * einer Abfrage über `schueler` – die Summe der Guthaben darf öffentlich
+ * sein, die einzelnen Guthaben nicht.
+ */
+export type Stundenglas = {
+	haus_id: string;
+	bereich_id: string;
+	hausname: string;
+	slug: string;
+	farbe_primaer: string | null;
+	farbe_sekundaer: string | null;
+	logo_pfad: string | null;
+	motto: string | null;
+	gesammelt: number;
+	verfuegbar: number;
+	mitglieder: number;
+};
+
+export async function getStundenglaeser(bereichId?: string | null) {
+	return await supabase.rpc('stundenglaeser', { p_bereich_id: bereichId ?? null });
+}
+
+/**
+ * Die laufende Wochenquest. Sichtbar auch ohne Anmeldung – sie hängt aus
+ * wie ein Aushang am Schwarzen Brett.
+ *
+ * Eine Quest ohne bereich_id gilt für die ganze Akademie und wird
+ * deshalb auch auf einer Fakultätsseite angezeigt, wenn dort keine
+ * eigene läuft.
+ */
+export async function getWochenquest(bereichId?: string | null) {
+	if (bereichId) {
+		const eigene = await supabase
+			.from('quests')
+			.select('*')
+			.eq('status', 'aktiv')
+			.eq('bereich_id', bereichId)
+			.order('startdatum', { ascending: false })
+			.limit(1);
+		if (!eigene.error && eigene.data && eigene.data.length > 0) {
+			return { data: eigene.data[0], error: null };
+		}
+	}
+	const global = await supabase
+		.from('quests')
+		.select('*')
+		.eq('status', 'aktiv')
+		.is('bereich_id', null)
+		.order('startdatum', { ascending: false })
+		.limit(1);
+	return { data: global.data?.[0] ?? null, error: global.error };
 }
 
 // === Quests ===\
