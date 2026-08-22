@@ -12,7 +12,7 @@
 	import '@fontsource/lora/latin-700.css';
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
-	import { getCurrentUser, getUserRole, signOut } from '$lib/supabase';
+	import { supabase, getCurrentUser, getUserRole, signOut } from '$lib/supabase';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import type { User } from '@supabase/supabase-js';
@@ -22,13 +22,26 @@
 	let role: UserRole | null = $state(null);
 	let loading = $state(true);
 
-	onMount(async () => {
-		const currentUser = await getCurrentUser();
-		user = currentUser;
-		if (currentUser) {
-			role = await getUserRole(currentUser.id);
-		}
-		loading = false;
+	onMount(() => {
+		// onMount allein genügt nicht: Nach dem Anmelden wechselt die App per
+		// goto() die Seite, ohne neu zu laden – das Layout hätte den frisch
+		// angemeldeten Menschen sonst gar nicht bemerkt und weiter den
+		// Abgemeldet-Bildschirm gezeigt, bis jemand F5 drückt.
+		const { data } = supabase.auth.onAuthStateChange(async (_ereignis, sitzung) => {
+			user = sitzung?.user ?? null;
+			role = user ? await getUserRole(user.id) : null;
+			loading = false;
+		});
+
+		// Für den ersten Aufruf, falls schon eine Sitzung besteht.
+		(async () => {
+			const currentUser = await getCurrentUser();
+			user = currentUser;
+			if (currentUser) role = await getUserRole(currentUser.id);
+			loading = false;
+		})();
+
+		return () => data.subscription.unsubscribe();
 	});
 
 	async function handleSignOut() {

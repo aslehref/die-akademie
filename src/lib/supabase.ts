@@ -11,7 +11,12 @@ const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export type UserRole = 'admin' | 'teacher' | 'viewer';
+// Für das Anlegen von Schülerkonten wird ein zweiter Zugang gebraucht,
+// siehe src/lib/schuelerkonten.ts.
+export const SUPABASE_URL = supabaseUrl;
+export const SUPABASE_ANON_KEY = supabaseAnonKey;
+
+export type UserRole = 'admin' | 'teacher' | 'viewer' | 'schueler';
 
 export async function getCurrentUser() {
 	const {

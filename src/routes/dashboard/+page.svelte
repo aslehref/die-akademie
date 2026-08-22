@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
-	import { supabase, getCurrentUser } from '$lib/supabase.js';
+	import { supabase, getCurrentUser, getUserRole, type UserRole } from '$lib/supabase.js';
 
 	let bereiche = $state<any[]>([]);
 	let chronik = $state<any[]>([]);
@@ -9,10 +9,12 @@
 	let kapitel = $state<any[]>([]);
 	let aktuellesKapitel = $state<any>(null);
 	let loading = $state(true);
+	let rolle = $state<UserRole | null>(null);
 
 	onMount(async () => {
 		loading = true;
 		const user = await getCurrentUser();
+		rolle = user ? await getUserRole(user.id) : null;
 		const [bResult, cResult, sResult, kResult] = await Promise.all([
 			supabase.from('bereiche').select('*').order('typ').order('name'),
 			supabase
@@ -202,14 +204,16 @@
 				<h3 class="font-heading text-academy-gold">Punkteladen</h3>
 				<p class="text-academy-steel text-sm">Punkte einlösen</p>
 			</a>
-			<a
-				href="{base}/admin"
-				class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors block text-center"
-			>
-				<div class="text-4xl mb-2">⚙️</div>
-				<h3 class="font-heading text-academy-gold">Lehrerzimmer</h3>
-				<p class="text-academy-steel text-sm">Fakultäten verwalten</p>
-			</a>
+			{#if rolle === 'admin'}
+				<a
+					href="{base}/admin"
+					class="bg-academy-surface rounded-lg p-6 border border-academy-blue/30 hover:border-academy-gold/50 transition-colors block text-center"
+				>
+					<div class="text-4xl mb-2">⚙️</div>
+					<h3 class="font-heading text-academy-gold">Lehrerzimmer</h3>
+					<p class="text-academy-steel text-sm">Fakultäten verwalten</p>
+				</a>
+			{/if}
 		</section>
 	{/if}
 </div>

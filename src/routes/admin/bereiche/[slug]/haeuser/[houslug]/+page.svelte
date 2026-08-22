@@ -17,6 +17,16 @@
 		hausLoeschUmfang
 	} from '$lib/supabase.js';
 	import { ladeBildHoch, bildLinks, loescheBilder, pruefeBild } from '$lib/bilder.js';
+	import {
+		zugangAnlegen,
+		passwortNeuSetzen,
+		zugangEntziehen,
+		klarnamenHolen,
+		klarnameSpeichern,
+		loginVorschlag,
+		passwortVorschlag,
+		pruefeLoginName
+	} from '$lib/schuelerkonten.js';
 
 	let haus = $state<any>(null);
 	let schueler = $state<any[]>([]);
@@ -66,6 +76,15 @@
 	let umfang = $state<{ schueler: number; heldentaten: number; buchungen: number } | null>(null);
 	let loeschBestaetigung = $state('');
 
+	// Zugänge und Klarnamen
+	let klarnamen = $state<Record<string, string>>({});
+	let zugangFuer = $state<string | null>(null);
+	let zLogin = $state('');
+	let zPasswort = $state('');
+	let zKlarname = $state('');
+	let zFehler = $state('');
+	let zHinweis = $state('');
+
 	const kategorien = [
 		{ value: 'lernen', label: '📚 Lernen & Leistung' },
 		{ value: 'sozialverhalten', label: '🤝 Sozialverhalten' },
@@ -111,6 +130,7 @@
 			heldentaten = ht.data ?? [];
 
 			await linksHolen();
+			klarnamen = await klarnamenHolen(schueler.map((k) => k.id));
 			setzeBearbeitenFelder();
 
 			const { data } = await supabase.auth.getUser();
@@ -189,6 +209,83 @@
 	// Kleine Hilfe, damit die Rückfrage an einer Stelle sitzt.
 	function confirmErsatz(text: string) {
 		return window.confirm(text);
+	}
+
+	// ---------------------------------------------------------------- Zugänge
+	function zugangOeffnen(s: any) {
+		if (zugangFuer === s.id) {
+			zugangFuer = null;
+			return;
+		}
+		zugangFuer = s.id;
+		zLogin = s.login_name ?? loginVorschlag(s.akademiename);
+		zPasswort = passwortVorschlag();
+		zKlarname = klarnamen[s.id] ?? '';
+		zFehler = '';
+		zHinweis = '';
+	}
+
+	async function zugangSpeichern(s: any) {
+		zFehler = '';
+		zHinweis = '';
+		const formfehler = pruefeLoginName(zLogin);
+		if (formfehler) {
+			zFehler = formfehler;
+			return;
+		}
+		arbeitet = true;
+		try {
+			// Der Klarname wird immer gespeichert, auch ohne Zugang.
+			const { error: kFehler } = await klarnameSpeichern(s.id, zKlarname);
+			if (kFehler) throw kFehler;
+
+			if (!s.login_name) {
+				await zugangAnlegen(s.id, zLogin, zPasswort);
+				zHinweis =
+					`Zugang angelegt. Loginname „${zLogin.trim().toLowerCase()}“, ` +
+					`Passwort „${zPasswort}“. Notiere beides jetzt – das Passwort ist danach nicht mehr einsehbar.`;
+			} else {
+				zHinweis = 'Klarname gespeichert.';
+			}
+			await laden();
+		} catch (err: any) {
+			zFehler = err?.message ?? 'Das hat nicht geklappt.';
+		} finally {
+			arbeitet = false;
+		}
+	}
+
+	async function passwortNeu(s: any) {
+		zFehler = '';
+		zHinweis = '';
+		arbeitet = true;
+		try {
+			const neues = passwortVorschlag();
+			await passwortNeuSetzen(s, neues);
+			zPasswort = neues;
+			zHinweis = `Neues Passwort für „${s.login_name}“: „${neues}“. Jetzt notieren.`;
+			await laden();
+		} catch (err: any) {
+			zFehler = err?.message ?? 'Das Zurücksetzen hat nicht geklappt.';
+		} finally {
+			arbeitet = false;
+		}
+	}
+
+	async function zugangWeg(s: any) {
+		if (!confirmErsatz(`${s.akademiename} den Zugang entziehen? Die Punkte bleiben erhalten.`))
+			return;
+		arbeitet = true;
+		zFehler = '';
+		try {
+			await zugangEntziehen(s);
+			zHinweis = 'Zugang entzogen.';
+			await laden();
+		} catch (err: any) {
+			zFehler = err?.message ?? 'Das hat nicht geklappt.';
+		} finally {
+			arbeitet = false;
+		}
 	}
 
 	// ---------------------------------------------------------------- Punkte
@@ -892,24 +989,149 @@
 		{:else}
 			<div class="space-y-2">
 				{#each schueler as s}
-					<div
-						class="flex items-center justify-between p-3 rounded bg-academy-surface border border-academy-blue/20"
-					>
-						<div>
-							<span class="text-academy-parchment font-bold">{s.akademiename}</span>
-							<span class="text-xs text-academy-steel ml-2">Stufe {s.level}</span>
+					<div class="rounded bg-academy-surface border border-academy-blue/20 overflow-hidden">
+						<div class="flex items-center justify-between p-3 gap-3 flex-wrap">
+							<div class="min-w-0">
+								<span class="text-academy-parchment font-bold">{s.akademiename}</span>
+								<span class="text-xs text-academy-steel ml-2">Stufe {s.level}</span>
+								{#if s.login_name}
+									<span
+										class="text-xs ml-2 px-2 py-0.5 rounded-full border border-academy-cyan/40 text-academy-cyan"
+										title="Dieses Kind hat einen eigenen Zugang"
+									>
+										🔑 {s.login_name}
+									</span>
+								{/if}
+								{#if klarnamen[s.id]}
+									<div class="text-xs text-academy-steel mt-0.5">
+										{klarnamen[s.id]}
+										<span class="opacity-70">· nur für dich sichtbar</span>
+									</div>
+								{/if}
+							</div>
+							<div class="flex items-center gap-3 shrink-0">
+								<span class="text-sm text-academy-cyan">{s.xp} XP</span>
+								<span class="text-sm text-academy-gold font-bold">{s.punkte} Punkte</span>
+								<button
+									type="button"
+									onclick={() => zugangOeffnen(s)}
+									class="text-xs px-2 py-1 rounded border border-academy-blue/50 text-academy-parchment hover:bg-academy-blue/30"
+								>
+									{s.login_name ? 'Zugang' : 'Zugang einrichten'}
+								</button>
+								<button
+									type="button"
+									onclick={() => entlassen(s)}
+									class="text-xs px-2 py-1 rounded border border-academy-steel/40 text-academy-steel hover:bg-academy-steel/20"
+								>
+									Entfernen
+								</button>
+							</div>
 						</div>
-						<div class="flex items-center gap-4">
-							<span class="text-sm text-academy-cyan">{s.xp} XP</span>
-							<span class="text-sm text-academy-gold font-bold">{s.punkte} Punkte</span>
-							<button
-								type="button"
-								onclick={() => entlassen(s)}
-								class="text-xs px-2 py-1 rounded border border-academy-steel/40 text-academy-steel hover:bg-academy-steel/20"
-							>
-								Entfernen
-							</button>
-						</div>
+
+						{#if zugangFuer === s.id}
+							<div class="border-t border-academy-blue/20 p-4 bg-academy-bg/40 space-y-3">
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+									<div>
+										<label for="klar-{s.id}" class="block text-xs text-academy-parchment mb-1">
+											Klarname (bleibt für alle anderen unsichtbar)
+										</label>
+										<input
+											id="klar-{s.id}"
+											type="text"
+											bind:value={zKlarname}
+											class={eingabeKlasse}
+											placeholder="Vor- und Nachname"
+										/>
+									</div>
+									<div>
+										<label for="login-{s.id}" class="block text-xs text-academy-parchment mb-1">
+											Loginname
+										</label>
+										<input
+											id="login-{s.id}"
+											type="text"
+											bind:value={zLogin}
+											disabled={!!s.login_name}
+											class="{eingabeKlasse} disabled:opacity-50"
+											autocapitalize="none"
+											spellcheck="false"
+										/>
+									</div>
+								</div>
+
+								{#if !s.login_name}
+									<div>
+										<label for="pw-{s.id}" class="block text-xs text-academy-parchment mb-1">
+											Passwort
+										</label>
+										<div class="flex gap-2">
+											<input
+												id="pw-{s.id}"
+												type="text"
+												bind:value={zPasswort}
+												class={eingabeKlasse}
+											/>
+											<button
+												type="button"
+												onclick={() => (zPasswort = passwortVorschlag())}
+												class="text-xs px-3 rounded border border-academy-blue/50 text-academy-parchment shrink-0"
+											>
+												Neu würfeln
+											</button>
+										</div>
+										<p class="text-xs text-academy-steel mt-1">
+											Bewusst zum Vorlesen gemacht. Notiere es, bevor du speicherst — danach ist es
+											nicht mehr einsehbar.
+										</p>
+									</div>
+								{/if}
+
+								{#if zHinweis}
+									<div
+										class="bg-academy-green/25 border border-academy-green text-academy-parchment p-3 rounded text-sm"
+									>
+										{zHinweis}
+									</div>
+								{/if}
+								{#if zFehler}
+									<div
+										class="bg-red-900/30 border border-red-700/50 text-red-200 p-3 rounded text-sm"
+									>
+										{zFehler}
+									</div>
+								{/if}
+
+								<div class="flex gap-2 flex-wrap">
+									<button
+										type="button"
+										onclick={() => zugangSpeichern(s)}
+										disabled={arbeitet}
+										class="px-3 py-1.5 text-sm rounded bg-academy-cyan text-white font-bold disabled:opacity-50"
+									>
+										{s.login_name ? 'Klarname speichern' : 'Zugang anlegen'}
+									</button>
+									{#if s.login_name}
+										<button
+											type="button"
+											onclick={() => passwortNeu(s)}
+											disabled={arbeitet}
+											class="px-3 py-1.5 text-sm rounded border border-academy-gold/60 text-academy-gold disabled:opacity-50"
+										>
+											Neues Passwort
+										</button>
+										<button
+											type="button"
+											onclick={() => zugangWeg(s)}
+											disabled={arbeitet}
+											class="px-3 py-1.5 text-sm rounded border border-red-800/60 text-red-300 disabled:opacity-50"
+										>
+											Zugang entziehen
+										</button>
+									{/if}
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
